@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model RevisaoHistorico {
+  id         Int            @id @default(autoincrement())
+  trabalhoId Int
+  revisorId  Int
+  status     TrabalhoStatus
+  comentario String?
+  createdAt  DateTime       @default(now())
+  revisor    Usuario        @relation("UsuarioRevisaoHistorico", fields: [revisorId], references: [id])
+  trabalho   Trabalho       @relation(fields: [trabalhoId], references: [id])
+}
+
+model Departamento {
+  id             Int             @id @default(autoincrement())
+  nome           String
+  descricao      String?
+  criadoPorId    Int?
+  createdAt      DateTime        @default(now())
+  atualizadoEm   DateTime        @updatedAt
+  especialidades Especialidade[]
+  trabalhos      Trabalho[]      @relation("DepartamentoTrabalhos")
+  funcionarios   Usuario[]
+}
+
+model Especialidade {
+  id             Int           @id @default(autoincrement())
+  nome           String
+  descricao      String?
+  departamentoId Int?
+  createdAt      DateTime      @default(now())
+  atualizadoEm   DateTime      @updatedAt
+  departamento   Departamento? @relation(fields: [departamentoId], references: [id])
+  trabalhos      Trabalho[]    @relation("TrabalhoEspecialidade")
+  usuarios       Usuario[]     @relation("UsuarioEspecialidade")
+}
+
+model Usuario {
+  id                Int                @id @default(autoincrement())
+  nome              String
+  email             String             @unique
+  senha             String
+  role              Role               @default(ESTUDANTE)
+  departamentoId    Int?
+  createdAt         DateTime           @default(now())
+  atualizadoEm      DateTime           @updatedAt
+  revisoesHistorico RevisaoHistorico[] @relation("UsuarioRevisaoHistorico")
+  trabalhos         Trabalho[]         @relation("AutorTrabalho")
+  revisoes          Trabalho[]         @relation("RevisorTrabalho")
+  departamento      Departamento?      @relation(fields: [departamentoId], references: [id])
+  especialidades    Especialidade[]    @relation("UsuarioEspecialidade")
+}
+
+model Trabalho {
+  id             Int                @id @default(autoincrement())
+  titulo         String
+  resumo         String?
+  fileUrl        String?
+  status         TrabalhoStatus     @default(RASCUNHO)
+  dataPublicacao DateTime?
+  autorId        Int
+  departamentoId Int?
+  revisorId      Int?
+  createdAt      DateTime           @default(now())
+  atualizadoEm   DateTime           @updatedAt
+  motivoRejeicao String?
+  embedding      Float[]
+  revisoes       RevisaoHistorico[]
+  autor          Usuario            @relation("AutorTrabalho", fields: [autorId], references: [id])
+  departamento   Departamento?      @relation("DepartamentoTrabalhos", fields: [departamentoId], references: [id])
+  revisor        Usuario?           @relation("RevisorTrabalho", fields: [revisorId], references: [id])
+  especialidades Especialidade[]    @relation("TrabalhoEspecialidade")
+}
+
+enum Role {
+  ADMIN
+  PROFESSOR
+  ESTUDANTE
+  AVALIADOR
+}
+
+enum TrabalhoStatus {
+  RASCUNHO
+  PENDENTE
+  EM_REVISAO
+  APROVADO
+  RECUSADO
+  PUBLICADO
+}
