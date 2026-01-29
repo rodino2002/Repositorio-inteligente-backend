@@ -1,11 +1,9 @@
 import { Router, Request, Response } from "express";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { allowRoles } from "../middleware/roleMiddleware";
 import { Role } from "../types/role";
 import { TrabalhoStatus } from "@prisma/client";
-import { gerarEmbedding } from "../services/openAi.service";
-import { cosineSimilarity } from "../utils/cosineSimilarity";
 import { generateEmbedding } from "../services/embedding.service";
 
 
@@ -284,50 +282,6 @@ router.patch(
     }
   }
 );
-
-// busca inteligente
-router.get("/busca", authMiddleware, async (req: Request, res: Response) => {
-  const { query } = req.query;
-
-  if (!query) return res.status(400).json({ erro: "query é obrigatória" });
-
-  const embeddingQuery = await gerarEmbedding(query as string);
-
-  // Consulta com pgvector
-  const resultados = await prisma.$queryRaw`
-    SELECT *
-    FROM "Trabalho"
-    ORDER BY embedding <=> ${embeddingQuery} 
-    LIMIT 5
-  `;
-
-  res.json({ resultados });
-});
-
-interface TrabalhoResultado {
-  id: number;
-  titulo: string;
-  resumo: string;
-  fileUrl: string;
-  status: string;
-  dataPublicacao: Date | null;
-  autorId: number;
-  departamentoId: number;
-  revisorId: number | null;
-  createdAt: Date;
-  atualizadoEm: Date;
-  similarity: number;
-}
-
-
-// ✅ Tipo do resultado da query com similaridade
-type TrabalhoResultadoComSimilaridade = {
-  id: number;
-  titulo: string;
-  resumo: string;
-  fileUrl: string;
-  similarity: number;
-};
 
 router.post(
   "/buscar-inteligente",
