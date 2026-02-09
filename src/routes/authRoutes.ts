@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { authMiddleware } from "../middleware/authMiddleware";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -45,7 +46,7 @@ router.post("/login", async (req: Request, res: Response) => {
     const senhaValida = await bcrypt.compare(senha, usuario.senha);
     if (!senhaValida) return res.status(401).json({ erro: "Usuário ou senha inválidos" });
 
-    const token = jwt.sign({ id: usuario.id, email: usuario.email, role: usuario.role }, JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign({ id: usuario.id, email: usuario.email, role: usuario.role }, JWT_SECRET, { expiresIn: "1h" }); // token válido por 1 hora
 
     res.json({
       usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email },
@@ -55,5 +56,14 @@ router.post("/login", async (req: Request, res: Response) => {
     res.status(500).json({ erro: "Erro ao fazer login.", detalhes: e.message });
   }
 });
+
+//logout 
+router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
+  return res.json({
+    sucesso: true,
+    mensagem: "Logout realizado com sucesso",
+  });
+});
+
 
 export default router;

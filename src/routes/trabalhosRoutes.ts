@@ -5,6 +5,8 @@ import { allowRoles } from "../middleware/roleMiddleware";
 import { Role } from "../types/role";
 import { TrabalhoStatus } from "@prisma/client";
 import { generateEmbedding } from "../services/embedding.service";
+import { normalizar } from "../utils/normalizaTexto";
+import { redis } from "../lib/redis";
 
 
 const prisma = new PrismaClient();
@@ -69,8 +71,26 @@ router.post(
 // LIST - Listar Trabalhos
 // ============================
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
+
+
+  const { departamentoId, autorId, especialidadeId } = req.query;
+
+  const cacheKey = `trabalhos:list:dep=${departamentoId ?? "all"}:autor=${autorId ?? "all"}:esp=${especialidadeId ?? "all"}`
+
+  let cachedData: string | null = null
+
   try {
-    const { departamentoId, autorId, especialidadeId } = req.query;
+    cachedData = await redis.get(cacheKey)
+
+    if (cachedData) {
+      return res.json(JSON.parse(cachedData))
+    }
+
+  } catch (err) {
+    console.warn("Redis indisponível, seguindo sem cache")
+  }
+
+  try {
 
     const trabalhos = await prisma.trabalho.findMany({
       where: {
@@ -94,13 +114,23 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
         autor: true,
         departamento: true,
         especialidades: true,
-
-        // 🚫 embedding NÃO pode aparecer
       },
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({ sucesso: true, total: trabalhos?.length, dados: trabalhos });
+    const responsePayload = {
+      sucesso: true,
+      total: trabalhos.length,
+      dados: trabalhos,
+    }
+
+    await redis.set(cacheKey, JSON.stringify(responsePayload), {
+      EX: 60,
+    }) // cache por 60 segundos no redis
+
+    return res.json(responsePayload)
+
+
   } catch (e: any) {
     res.status(500).json({ sucesso: false, erro: e.message });
   }
@@ -287,6 +317,23 @@ router.post(
   "/buscar-inteligente",
   authMiddleware,
   async (req: Request, res: Response) => {
+
+    const cacheKey = `trabalhos:busca-inteligente:${JSON.stringify(req.body)}`
+
+    let cachedData: string | null = null
+
+    try {
+
+      cachedData = await redis.get(cacheKey)
+
+      if (cachedData) {
+        return res.json(JSON.parse(cachedData))
+      }
+
+    } catch (error) {
+      console.warn("Redis indisponível, seguindo sem cache")
+    }
+
     try {
       const { query, threshold = 0.5 } = req.body;
 
@@ -297,13 +344,6 @@ router.post(
         });
       }
 
-      // 🔹 Normalização básica
-      const normalizar = (t: string) =>
-        t
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/\p{Diacritic}/gu, "")
-          .trim();
 
       const textoQuery = normalizar(`Titulo: ${query}\nResumo: ${query}`);
 

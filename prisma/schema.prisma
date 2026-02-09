@@ -46,7 +46,8 @@ model Usuario {
   id                Int                @id @default(autoincrement())
   nome              String
   email             String             @unique
-  senha             String
+  bi_number         String?
+  senha             String             @unique
   role              Role               @default(ESTUDANTE)
   departamentoId    Int?
   createdAt         DateTime           @default(now())
@@ -78,6 +79,16 @@ model Trabalho {
   revisor        Usuario?           @relation("RevisorTrabalho", fields: [revisorId], references: [id])
   especialidades Especialidade[]    @relation("TrabalhoEspecialidade")
 }
+
+model Otp {
+  id        String   @id @default(uuid())
+  email     String
+  codigo    String
+  expiraEm  DateTime
+  usado     Boolean  @default(false)
+  criadoEm  DateTime @default(now())
+}
+
 
 enum Role {
   ADMIN

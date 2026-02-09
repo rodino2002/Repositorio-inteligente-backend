@@ -2,13 +2,14 @@
 import { Router, Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-//import { Role } from "../types/role"; // enum TypeScript
 import { allowRoles } from "../middleware/roleMiddleware";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { Role } from "@prisma/client";
+import { validarBI } from "../services/biValidation.service";
 
 const prisma = new PrismaClient();
 const router = Router();
+
 
 // ============================
 // CREATE - Criar novo usuário (Admin pode definir role)
@@ -25,7 +26,8 @@ router.post(
         senha,
         role,
         departamentoId,
-        especialidadesIds
+        especialidadesIds,
+        bi_number
       } = req.body as {
         nome: string;
         email: string;
@@ -33,15 +35,36 @@ router.post(
         role?: Role;
         departamentoId?: number;
         especialidadesIds?: number[];
+        bi_number: string
       };
 
       // -----------------------------
       // 1. Validação básica
       // -----------------------------
-      if (!nome || !email || !senha) {
+
+      if (!nome || !email || !senha || !bi_number) {
         return res.status(400).json({
           sucesso: false,
-          erro: "Nome, email e senha são obrigatórios."
+          erro: "Nome, email, BI e senha são obrigatórios."
+        });
+      }
+
+      // -----------------------------
+      // 1.1 Validação do BI
+      // -----------------------------
+
+      const resultadoBI = await validarBI(bi_number);
+
+      if (!resultadoBI.valido) {
+        return res.status(400).json({
+          erro: "BI inválido ou não encontrado",
+        });
+      }
+
+      // opcional: cruzar nomes
+      if (resultadoBI.nome && resultadoBI.nome !== nome) {
+        return res.status(400).json({
+          erro: "Nome não corresponde ao BI informado",
         });
       }
 
@@ -91,10 +114,14 @@ router.post(
       // -----------------------------
       const senhaHashed = await bcrypt.hash(senha, 10);
 
+      const biNormalizado = bi_number.trim().toUpperCase(); // formatar o número de BI
+
+
       const novoUsuario = await prisma.usuario.create({
         data: {
           nome,
           email,
+          bi_number: biNormalizado,
           senha: senhaHashed,
           role: roleFinal ?? undefined,
           departamentoId: departamentoId ?? null,
@@ -124,12 +151,10 @@ router.post(
         erro: "Erro ao criar usuário.",
         detalhes: e.message,
       });
+      
     }
   }
 );
-
-
-
 
 // ============================
 // READ - Listar todos os usuários
