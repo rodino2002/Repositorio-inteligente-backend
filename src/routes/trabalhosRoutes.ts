@@ -7,6 +7,7 @@ import { TrabalhoStatus } from "@prisma/client";
 import { generateEmbedding } from "../services/embedding.service";
 import { normalizar } from "../utils/normalizaTexto";
 import { redis } from "../lib/redis";
+import crypto from "crypto"
 
 
 const prisma = new PrismaClient();
@@ -60,6 +61,7 @@ router.post(
       });
 
       return res.status(201).json({ sucesso: true, dados: novo });
+      
     } catch (e: any) {
       console.error("ERRO CRIAR TRABALHO:", e);
       return res.status(500).json({ sucesso: false, erro: e.message });
@@ -313,12 +315,25 @@ router.patch(
   }
 );
 
+// ============================
+// BUSCA INTELIGENTE - Similaridade de cosseno com embeddings
+// ============================
 router.post(
   "/buscar-inteligente",
   authMiddleware,
   async (req: Request, res: Response) => {
 
-    const cacheKey = `trabalhos:busca-inteligente:${JSON.stringify(req.body)}`
+    const { query, threshold = 0.7 } = req.body;
+
+    if (!query?.trim()) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Query é obrigatória",
+      });
+    }
+
+    const hash = crypto.createHash("md5").update(JSON.stringify(req.body)).digest("hex")
+    const cacheKey = `trabalhos:busca-inteligente:${hash}`
 
     let cachedData: string | null = null
 
@@ -335,21 +350,11 @@ router.post(
     }
 
     try {
-      const { query, threshold = 0.5 } = req.body;
-
-      if (!query?.trim()) {
-        return res.status(400).json({
-          sucesso: false,
-          erro: "Query é obrigatória",
-        });
-      }
-
 
       const textoQuery = normalizar(`Titulo: ${query}\nResumo: ${query}`);
 
       // 🔹 Geração do embedding da query
       const queryEmbedding = await generateEmbedding(textoQuery);
-
 
       //console.log("🔹 Query embedding gerado. Dimensão:", queryEmbedding.length);
 
@@ -385,13 +390,23 @@ router.post(
         }))
       );
 
-      return res.json({
+      const payload = {
         sucesso: true,
         query,
         threshold,
         totalEncontrados: resultadosFiltrados.length,
         resultados: resultadosFiltrados,
-      });
+      }
+
+      // adicionando no cache para acelerar buscas futuras idênticas
+      try {
+        await redis.set(cacheKey, JSON.stringify(payload), { EX: 60 })
+      } catch {
+        console.warn("Não foi possível salvar no cache")
+      }
+
+      return res.json(payload);
+
     } catch (error) {
       console.error(" ERRO BUSCAR-INTELIGENTE:", error);
       return res.status(500).json({

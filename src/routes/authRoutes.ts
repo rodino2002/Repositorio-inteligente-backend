@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "../middleware/authMiddleware";
+import { validarBI } from "../services/biValidation.service";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -58,11 +59,42 @@ router.post("/login", async (req: Request, res: Response) => {
 });
 
 //logout 
-router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
+router.post("/logout", 
+  //authMiddleware, 
+  async (req: Request, res: Response) => {
   return res.json({
     sucesso: true,
     mensagem: "Logout realizado com sucesso",
   });
+});
+
+// validar BI
+router.get("/validate_BI", 
+  //authMiddleware, 
+  async (req: Request, res: Response) => {
+
+    const {bi} = req.query
+
+    if(!bi) return res.status(400).json({message:"Número de BI obrigatório"});
+
+    try {
+
+      const bi_number = String(bi)
+
+      const response = await validarBI(bi_number)
+      //console.log(response)
+      if(!response.valido) return res.status(400).json({message: "BI não encontrado"})
+      
+
+      return res.json({
+        nome: response.nome
+      }).status(200)
+
+    } catch (error) {
+      console.log(error)
+      return res.json({message:"Erro ao validat BI"}).status(500);
+    }
+
 });
 
 

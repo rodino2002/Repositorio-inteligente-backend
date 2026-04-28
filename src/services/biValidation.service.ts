@@ -21,7 +21,7 @@ export async function validarBI(bi: string): Promise<BIResponse> {
       }
     );
 
-    if (inssResponse.data) {
+    if (inssResponse.data?.sucesso) {
       return {
         valido: true,
         nome: inssResponse.data.dados.nome,
@@ -38,7 +38,7 @@ export async function validarBI(bi: string): Promise<BIResponse> {
       { timeout: 5000 }
     );
 
-    if (edgarResponse.data) {
+    if (!edgarResponse.data?.error) {
       return {
         valido: true,
         nome: edgarResponse.data.name,

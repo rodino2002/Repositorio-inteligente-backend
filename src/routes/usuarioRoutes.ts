@@ -160,12 +160,15 @@ router.post(
 // READ - Listar todos os usuários
 // ============================
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
+   const { role } = req.query;
+
   try {
     const usuarios = await prisma.usuario.findMany({
-      orderBy: { createdAt: "desc" }, // aqui deve bater com o schema
+      orderBy: { createdAt: "desc" }, // aqui deve bater com o schema,
+      where: role ? { role: role as Role }: undefined,
+
     });
-
-
+    
     res.json({ sucesso: true, total: usuarios.length, dados: usuarios });
 
   } catch (e: any) {
