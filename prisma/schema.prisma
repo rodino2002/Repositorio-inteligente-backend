@@ -47,7 +47,7 @@ model Usuario {
   nome              String
   email             String             @unique
   bi_number         String?
-  senha             String             @unique
+  senha             String             
   role              Role               @default(ESTUDANTE)
   departamentoId    Int?
   createdAt         DateTime           @default(now())
@@ -78,6 +78,10 @@ model Trabalho {
   departamento   Departamento?      @relation("DepartamentoTrabalhos", fields: [departamentoId], references: [id])
   revisor        Usuario?           @relation("RevisorTrabalho", fields: [revisorId], references: [id])
   especialidades Especialidade[]    @relation("TrabalhoEspecialidade")
+  tipoTrabalhoId Int?
+  tipoTrabalho   TipoTrabalho?       @relation(fields: [tipoTrabalhoId], references: [id])
+
+  @@index([tipoTrabalhoId])
 }
 
 model Otp {
@@ -87,6 +91,17 @@ model Otp {
   expiraEm  DateTime
   usado     Boolean  @default(false)
   criadoEm  DateTime @default(now())
+}
+
+model TipoTrabalho {
+  id          Int         @id @default(autoincrement())
+  nome        String      @unique
+  descricao   String?
+
+  trabalhos   Trabalho[]
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 

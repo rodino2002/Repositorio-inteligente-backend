@@ -12,6 +12,7 @@ import uploadRouter from "./routes/uploadRouter";
 import { SendOTP } from "./routes/sendOTP";
 import { swaggerSpec } from "./docs/swagger";
 import { connectRedis } from "./lib/redis"
+import { RefreshToken } from "./routes/refreshToken";
 
 const apiV1 = "/api/v1";
 
@@ -42,6 +43,7 @@ app.get("/swagger.json", (_req, res) => {
   res.json(swaggerSpec);
 });
 //routes
+app.use("/uploads", express.static("uploads"));
 
 app.use(`${apiV1}/upload`, uploadRouter);
 app.use(`${apiV1}/trabalhos`, trabalhosRoutes);
@@ -50,6 +52,7 @@ app.use(`${apiV1}/usuarios`, usuarioRoutes);
 app.use(`${apiV1}/especialidades`, especialidadeRoutes);
 app.use(`${apiV1}/auth`, authRoutes);
 app.post(`${apiV1}/send-otp`, SendOTP);
+app.post(`${apiV1}/refresh`, RefreshToken);
 
 app.use(errorHandler);
 

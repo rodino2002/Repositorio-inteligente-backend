@@ -4,6 +4,10 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { validarBI } from "../services/biValidation.service";
+import {
+  gerarAccessToken,
+  gerarRefreshToken
+} from "../utils/jwt";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -18,21 +22,37 @@ router.post("/register", async (req: Request, res: Response) => {
     const senhaHashed = await bcrypt.hash(senha, 10);
 
     const usuario = await prisma.usuario.create({
-      data: { nome, email, senha: senhaHashed },
+      data: {
+        nome,
+        email,
+        senha: senhaHashed,
+      },
     });
 
-    const token = jwt.sign(
-      { id: usuario.id, email: usuario.email },
-      JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    const payload = {
+      id: usuario.id,
+      email: usuario.email,
+      role: usuario.role,
+    };
+
+    const accessToken = gerarAccessToken(payload);
+    const refreshToken = gerarRefreshToken(payload);
 
     res.status(201).json({
-      usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email },
-      token,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+      },
+      accessToken,
+      refreshToken,
     });
+
   } catch (e: any) {
-    res.status(400).json({ erro: "Não foi possível registrar usuário.", detalhes: e.message });
+    res.status(400).json({
+      erro: "Não foi possível registrar usuário.",
+      detalhes: e.message,
+    });
   }
 });
 
@@ -41,20 +61,52 @@ router.post("/login", async (req: Request, res: Response) => {
   const { email, senha } = req.body;
 
   try {
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
-    if (!usuario) return res.status(401).json({ erro: "Usuário ou senha inválidos" });
+    const usuario = await prisma.usuario.findUnique({
+      where: { email },
+    });
 
-    const senhaValida = await bcrypt.compare(senha, usuario.senha);
-    if (!senhaValida) return res.status(401).json({ erro: "Usuário ou senha inválidos" });
+    if (!usuario) {
+      return res.status(401).json({
+        erro: "Usuário ou senha inválidos",
+      });
+    }
 
-    const token = jwt.sign({ id: usuario.id, email: usuario.email, role: usuario.role }, JWT_SECRET, { expiresIn: "1h" }); // token válido por 1 hora
+    const senhaValida = await bcrypt.compare(
+      senha,
+      usuario.senha
+    );
+
+    if (!senhaValida) {
+      return res.status(401).json({
+        erro: "Usuário ou senha inválidos",
+      });
+    }
+
+    const payload = {
+      id: usuario.id,
+      email: usuario.email,
+      role: usuario.role,
+    };
+
+    const accessToken = gerarAccessToken(payload);
+    const refreshToken = gerarRefreshToken(payload);
 
     res.json({
-      usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email },
-      token,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        role: usuario.role,
+      },
+      accessToken,
+      refreshToken,
     });
+
   } catch (e: any) {
-    res.status(500).json({ erro: "Erro ao fazer login.", detalhes: e.message });
+    res.status(500).json({
+      erro: "Erro ao fazer login.",
+      detalhes: e.message,
+    });
   }
 });
 

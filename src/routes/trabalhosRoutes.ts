@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { allowRoles } from "../middleware/roleMiddleware";
 import { Role } from "../types/role";
@@ -8,42 +8,109 @@ import { generateEmbedding } from "../services/embedding.service";
 import { normalizar } from "../utils/normalizaTexto";
 import { redis } from "../lib/redis";
 import crypto from "crypto"
+import { calcularScore } from "../services/calcularScore.service";
 
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// post do trabalho
 
+// ============================
+// TIPOS DE TRABALHO
+// ============================
+ router.get("/tipos_de_trabalhos", authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const tipos = await prisma.tipoTrabalho.findMany({
+      select: {
+        id: true,
+        nome : true,
+      }
+    });
+    res.status(200).json({ sucesso: true, dados: tipos });
+  } catch (e: any) {
+    console.error("ERRO AO BUSCAR TIPOS DE TRABALHO:", e);
+    res.status(500).json({ sucesso: false, erro: e.message });
+  }
+});
+
+
+// post do trabalho
 router.post(
   "/",
   authMiddleware,
   async (req: Request, res: Response) => {
     try {
-      const { titulo, resumo, fileUrl, departamentoId, especialidadesIds } = req.body;
+      const {
+        titulo,
+        resumo,
+        fileUrl,
+        departamentoId,
+        especialidadesIds,
+        tipoTrabalhoId,
+      } = req.body;
+
       const autorId = (req as any).usuario.id;
 
-      // Texto rico para gerar embedding
-      const textoEmbedding = `Titulo: ${titulo}\nResumo: ${resumo}`;
+      // Buscar departamento
+      const departamento = departamentoId
+        ? await prisma.departamento.findUnique({
+          where: { id: departamentoId },
+          select: { nome: true },
+        })
+        : null;
+
+      // Buscar especialidades
+      const especialidades = especialidadesIds?.length
+        ? await prisma.especialidade.findMany({
+          where: {
+            id: {
+              in: especialidadesIds,
+            },
+          },
+          select: {
+            nome: true,
+          },
+        })
+        : [];
+
+        const trabalhoTipo = tipoTrabalhoId
+        ? await prisma.tipoTrabalho.findUnique({
+          where: { id: tipoTrabalhoId },
+          select: { nome: true },
+        })
+        : null;
+
+      // Texto rico para embedding
+      const textoEmbedding = normalizar(`
+        Título: ${titulo}
+        Resumo: ${resumo}
+        Departamento: ${departamento?.nome ?? ""}
+        Especialidades: ${especialidades.map((e) => e.nome).join(", ")}
+        Tipo de Trabalho: ${trabalhoTipo?.nome ?? ""}
+      `);
 
       // Gerar embedding
       const embeddingRaw = await generateEmbedding(textoEmbedding);
 
-      // Converte para array JS
       const embedding: number[] = Array.from(embeddingRaw);
 
-      // Criar trabalho direto com embedding
+      // Criar trabalho
       const novo = await prisma.trabalho.create({
         data: {
           titulo,
           resumo,
           fileUrl,
           autorId,
+          tipoTrabalhoId: tipoTrabalhoId ?? null,
           departamentoId: departamentoId ?? null,
           especialidades: {
-            connect: especialidadesIds?.map((id: number) => ({ id })) ?? [],
+            connect:
+              especialidadesIds?.map((id: number) => ({
+                id,
+              })) ?? [],
           },
-          embedding, // aqui já insere direto
+          embedding,
+
         },
         select: {
           id: true,
@@ -52,19 +119,34 @@ router.post(
           fileUrl: true,
           autorId: true,
           departamentoId: true,
+          tipoTrabalhoId: true,
           autor: true,
           departamento: true,
+          tipoTrabalho: true,
           especialidades: true,
           createdAt: true,
-          atualizadoEm: true
-        }
+          atualizadoEm: true,
+        },
       });
 
-      return res.status(201).json({ sucesso: true, dados: novo });
-      
+      // invalidar TODOS os caches relacionados
+      const keys = await redis.keys("trabalhos:list:*");
+
+      if (keys.length) {
+        await redis.del(keys);
+      }
+
+      return res.status(201).json({
+        sucesso: true,
+        dados: novo,
+      });
     } catch (e: any) {
       console.error("ERRO CRIAR TRABALHO:", e);
-      return res.status(500).json({ sucesso: false, erro: e.message });
+
+      return res.status(500).json({
+        sucesso: false,
+        erro: e.message,
+      });
     }
   }
 );
@@ -74,10 +156,45 @@ router.post(
 // ============================
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
 
+  const {
+    departamentoId,
+    autorNome,
+    especialidadeId,
+    status,
+    start_date,
+    end_date,
+    page,
+    per_page,
+    tipoTrabalhoId,
+    tag, // palavra-chave para busca no título ou resumo,
+  } = req.query;
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(per_page) || 20;
 
-  const { departamentoId, autorId, especialidadeId } = req.query;
+  const startDate = start_date
+    ? new Date(String(start_date))
+    : undefined;
 
-  const cacheKey = `trabalhos:list:dep=${departamentoId ?? "all"}:autor=${autorId ?? "all"}:esp=${especialidadeId ?? "all"}`
+  const endDate = end_date
+    ? new Date(String(end_date))
+    : undefined;
+
+  if (endDate) {
+    endDate.setHours(23, 59, 59, 999);
+  }
+
+  const skip = (pageNumber - 1) * limitNumber;
+  const cacheKey =
+    `trabalhos:list:` +
+    `dep=${departamentoId ?? "all"}:` +
+    `autor=${autorNome ?? "all"}:` +
+    `esp=${especialidadeId ?? "all"}:` +
+    `status=${status ?? "all"}:` +
+    `start=${start_date ?? "none"}:` +
+    `tipo=${tipoTrabalhoId ?? "all"}:` +
+    `end=${end_date ?? "none"}:` +
+    `page=${pageNumber}:` +
+    `per_page=${limitNumber}`;
 
   let cachedData: string | null = null
 
@@ -93,15 +210,50 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
   }
 
   try {
+    const where: Prisma.TrabalhoWhereInput = {
+      tipoTrabalhoId: tipoTrabalhoId
+        ? Number(tipoTrabalhoId)
+        : undefined,
+        
+      departamentoId: departamentoId
+        ? Number(departamentoId)
+        : undefined,
+
+      autor: autorNome
+        ? {
+          nome: {
+            contains: String(autorNome),
+            mode: "insensitive",
+          },
+        }
+        : undefined,
+
+      especialidades: especialidadeId
+        ? {
+          some: {
+            id: Number(especialidadeId),
+          },
+        }
+        : undefined,
+
+      status: status
+        ? (status as TrabalhoStatus)
+        : undefined,
+
+      createdAt:
+        startDate || endDate
+          ? {
+            gte: startDate,
+            lte: endDate,
+          }
+          : undefined,
+    };
 
     const trabalhos = await prisma.trabalho.findMany({
-      where: {
-        departamentoId: departamentoId ? Number(departamentoId) : undefined,
-        autorId: autorId ? Number(autorId) : undefined,
-        especialidades: especialidadeId
-          ? { some: { id: Number(especialidadeId) } }
-          : undefined,
-      },
+      where,
+      skip,
+      take: limitNumber,
+
       select: {
         id: true,
         titulo: true,
@@ -109,22 +261,53 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
         fileUrl: true,
         status: true,
         dataPublicacao: true,
-        autorId: true,
-        departamentoId: true,
         createdAt: true,
         atualizadoEm: true,
-        autor: true,
-        departamento: true,
-        especialidades: true,
+        autor: {
+          select: {
+            nome: true,
+          },
+        },
+        departamento: {
+          select: {
+            nome: true,
+          },
+        },
+        especialidades: {
+          select: {
+            nome: true,
+          }
+        },
+        motivoRejeicao: true,
+        tipoTrabalho:  {
+          select: {
+            nome: true,
+          }
+        },
       },
-      orderBy: { createdAt: "desc" },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    const total = await prisma.trabalho.count({
+      where
     });
 
     const responsePayload = {
       sucesso: true,
-      total: trabalhos.length,
+
+      paginacao: {
+        totalItems: total,
+        totalPaginas: Math.ceil(total / limitNumber),
+        paginaAtual: pageNumber,
+        itensPorPagina: limitNumber,
+        totalItemsNaPagina: trabalhos.length,
+      },
+
       dados: trabalhos,
-    }
+    };
 
     await redis.set(cacheKey, JSON.stringify(responsePayload), {
       EX: 60,
@@ -141,7 +324,7 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
 // ============================
 // READ - Trabalho por ID
 // ============================
-router.get("/:id", async (req: Request, res: Response) => {
+router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
 
@@ -202,6 +385,14 @@ router.put(
         },
       });
 
+
+      // invalidar TODOS os caches relacionados
+      const keys = await redis.keys("trabalhos:list:*");
+
+      if (keys.length) {
+        await redis.del(keys);
+      }
+
       res.json({ sucesso: true, dados: atualizado });
     } catch (e: any) {
       res.status(500).json({ sucesso: false, erro: e.message });
@@ -221,6 +412,13 @@ router.delete(
       const id = Number(req.params.id);
 
       await prisma.trabalho.delete({ where: { id } });
+
+      // invalidar TODOS os caches relacionados
+      const keys = await redis.keys("trabalhos:list:*");
+
+      if (keys.length) {
+        await redis.del(keys);
+      }
 
       res.json({ sucesso: true, mensagem: "Trabalho deletado com sucesso" });
     } catch (e: any) {
@@ -243,6 +441,13 @@ router.patch(
         data: { status: TrabalhoStatus.APROVADO },
       });
 
+      // invalidar TODOS os caches relacionados
+      const keys = await redis.keys("trabalhos:list:*");
+
+      if (keys.length) {
+        await redis.del(keys);
+      }
+
       res.json({ sucesso: true, dados: trabalho });
     } catch (e: any) {
       res.status(500).json({ sucesso: false, erro: e.message });
@@ -264,6 +469,13 @@ router.patch(
         where: { id },
         data: { status: TrabalhoStatus.RECUSADO, motivoRejeicao: motivo ?? null },
       });
+
+      //  invalidar TODOS os caches relacionados
+      const keys = await redis.keys("trabalhos:list:*");
+
+      if (keys.length) {
+        await redis.del(keys);
+      }
 
       res.json({ sucesso: true, dados: trabalho });
     } catch (e: any) {
@@ -323,7 +535,7 @@ router.post(
   authMiddleware,
   async (req: Request, res: Response) => {
 
-    const { query, threshold = 0.7 } = req.body;
+    const { query, threshold = 0.4 } = req.body;
 
     if (!query?.trim()) {
       return res.status(400).json({
@@ -351,7 +563,8 @@ router.post(
 
     try {
 
-      const textoQuery = normalizar(`Titulo: ${query}\nResumo: ${query}`);
+      //const textoQuery = normalizar(`Titulo: ${query}\nResumo: ${query}`);
+      const textoQuery = normalizar(query);
 
       // 🔹 Geração do embedding da query
       const queryEmbedding = await generateEmbedding(textoQuery);
@@ -363,31 +576,69 @@ router.post(
 
       // 🔹 Buscar TCCs com similaridade de cosseno
       const resultadosRaw = await prisma.$queryRawUnsafe(`
-        SELECT
-          id,
-          titulo,
-          resumo,
-          "fileUrl",
-          cosine_similarity(embedding, ${embeddingSql}) AS similarity
-        FROM "Trabalho"
-        WHERE embedding IS NOT NULL
-          AND status = 'APROVADO'
-        ORDER BY similarity DESC
-        LIMIT 10;
-      `);
+  SELECT
+    t.id,
+    t.titulo,
+    t.resumo,
+    t."fileUrl",
+    t.status,
+    t."createdAt",
 
-      // 🔹 Filtrar pelo threshold, se desejado
-      const resultadosFiltrados = (resultadosRaw as any[]).filter(
-        r => r.similarity >= threshold
-      );
+    cosine_similarity(t.embedding, ${embeddingSql}) AS similarity,
 
-      console.log(
-        " Resultados após filtro threshold:",
-        resultadosFiltrados.map(r => ({
-          id: r.id,
-          titulo: r.titulo,
-          similarity: r.similarity,
+    json_build_object(
+      'id', u.id,
+      'nome', u.nome
+    ) AS autor,
+
+    json_build_object(
+      'id', d.id,
+      'nome', d.nome
+    ) AS departamento,
+
+    COALESCE(
+      json_agg(
+        json_build_object(
+          'id', e.id,
+          'nome', e.nome,
+          'descricao', e.descricao
+        )
+      ) FILTER (WHERE e.id IS NOT NULL),
+      '[]'
+    ) AS especialidades
+
+  FROM "Trabalho" t
+
+  LEFT JOIN "Usuario" u
+    ON u.id = t."autorId"
+
+  LEFT JOIN "Departamento" d
+    ON d.id = t."departamentoId"
+
+  LEFT JOIN "_TrabalhoEspecialidade" te
+  ON te."B" = t.id
+
+  LEFT JOIN "Especialidade" e
+  ON e.id = te."A"
+
+  WHERE t.embedding IS NOT NULL
+    AND t.status = 'APROVADO'
+
+  GROUP BY t.id, u.id, d.id
+
+  ORDER BY similarity DESC
+  LIMIT 10;
+`);
+
+      const ranked = (resultadosRaw as any[])
+        .map(item => ({
+          ...item,
+          score: calcularScore(query, item),
         }))
+        .sort((a, b) => b.score - a.score);
+
+      const resultadosFiltrados = ranked.filter(
+        r => r.score >= threshold // antes  r => r.similarity >= threshold
       );
 
       const payload = {
@@ -396,7 +647,7 @@ router.post(
         threshold,
         totalEncontrados: resultadosFiltrados.length,
         resultados: resultadosFiltrados,
-      }
+      };
 
       // adicionando no cache para acelerar buscas futuras idênticas
       try {
@@ -416,5 +667,7 @@ router.post(
     }
   }
 );
+
+
 
 export default router;
