@@ -37,7 +37,7 @@ router.post(
 // ============================
 // READ - Listar Departamentos
 // ============================
-router.get("/", authMiddleware, async (_req, res) => {
+router.get("/", async (_req, res) => {
   try {
     const dados = await prisma.departamento.findMany({
       orderBy: { createdAt: "desc" },
@@ -60,7 +60,7 @@ router.get("/", authMiddleware, async (_req, res) => {
 // ============================
 // READ - Detalhe por ID
 // ============================
-router.get("/:id", authMiddleware, async (req, res) => {
+router.get("/:id", async (req, res) => {
   const { id } = req.params;
 
   try {

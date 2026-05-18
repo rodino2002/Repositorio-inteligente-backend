@@ -18,7 +18,7 @@ const router = Router();
 // ============================
 // TIPOS DE TRABALHO
 // ============================
- router.get("/tipos_de_trabalhos", authMiddleware, async (req: Request, res: Response) => {
+ router.get("/tipos_de_trabalhos", async (req: Request, res: Response) => {
   try {
     const tipos = await prisma.tipoTrabalho.findMany({
       select: {
@@ -154,7 +154,7 @@ router.post(
 // ============================
 // LIST - Listar Trabalhos
 // ============================
-router.get("/", authMiddleware, async (req: Request, res: Response) => {
+router.get("/", async (req: Request, res: Response) => {
 
   const {
     departamentoId,
@@ -324,7 +324,7 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
 // ============================
 // READ - Trabalho por ID
 // ============================
-router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
+router.get("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
 
@@ -532,7 +532,6 @@ router.patch(
 // ============================
 router.post(
   "/buscar-inteligente",
-  authMiddleware,
   async (req: Request, res: Response) => {
 
     const { query, threshold = 0.4 } = req.body;
