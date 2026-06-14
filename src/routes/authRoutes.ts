@@ -66,7 +66,7 @@ router.post("/login", async (req: Request, res: Response) => {
     });
 
     if (!usuario) {
-      return res.status(401).json({
+      return res.status(403).json({
         erro: "Usuário ou senha inválidos",
       });
     }
@@ -77,7 +77,7 @@ router.post("/login", async (req: Request, res: Response) => {
     );
 
     if (!senhaValida) {
-      return res.status(401).json({
+      return res.status(403).json({
         erro: "Usuário ou senha inválidos",
       });
     }
