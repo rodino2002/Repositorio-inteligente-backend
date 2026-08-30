@@ -273,22 +273,26 @@ router.get("/", async (req: Request, res: Response) => {
         atualizadoEm: true,
         autor: {
           select: {
+            id: true,
             nome: true,
           },
         },
         departamento: {
           select: {
+            id: true,
             nome: true,
           },
         },
         especialidades: {
           select: {
+            id: true,
             nome: true,
           }
         },
         motivoRejeicao: true,
         tipoTrabalho: {
           select: {
+            id: true,
             nome: true,
           }
         },
@@ -409,11 +413,11 @@ router.get("/me", authMiddleware, async (req: Request, res: Response) => {
           dataPublicacao: true,
           createdAt: true,
           atualizadoEm: true,
-          autor: { select: { nome: true } },
-          departamento: { select: { nome: true } },
-          especialidades: { select: { nome: true } },
+          autor: { select: { id:true, nome: true } },
+          departamento: { select: {id:true, nome: true } },
+          especialidades: { select: { id:true, nome: true } },
           motivoRejeicao: true,
-          tipoTrabalho: { select: { nome: true } },
+          tipoTrabalho: { select: { id:true, nome: true } },
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -483,7 +487,7 @@ router.put(
         return res.status(403).json({ erro: "Sem permissão para editar" });
       }
 
-      const { titulo, resumo, fileUrl, departamentoId, especialidadesIds } = req.body;
+      const { titulo, resumo, fileUrl, departamentoId, especialidadesIds, tipoTrabalhoId } = req.body;
 
       const atualizado = await prisma.trabalho.update({
         where: { id },
@@ -496,11 +500,13 @@ router.put(
             set: [], // limpa
             connect: especialidadesIds?.map((id: number) => ({ id })) ?? [],
           },
+          tipoTrabalhoId
         },
         include: {
           autor: true,
           departamento: true,
           especialidades: true,
+          tipoTrabalho: true
         },
       });
 

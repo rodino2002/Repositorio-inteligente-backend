@@ -164,10 +164,21 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
 
   try {
     const usuarios = await prisma.usuario.findMany({
-      orderBy: { createdAt: "desc" }, // aqui deve bater com o schema,
-      where: role ? { role: role as Role }: undefined,
+            orderBy: {
+                createdAt: "desc",
+            },
 
-    });
+            where: role
+                ? {
+                      role: role as Role,
+                  }
+                : undefined,
+
+            include: {
+                departamento: true,
+                especialidades: true,
+            },
+        })
     
     res.json({ sucesso: true, total: usuarios.length, dados: usuarios });
 
@@ -208,37 +219,125 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
 // UPDATE - Atualizar usuário (Admin pode atualizar role e senha)
 // ============================
 router.put(
-  "/:id",
-  authMiddleware,
-  allowRoles(Role.ADMIN),
-  async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const { nome, email, senha, role } = req.body as Partial<{
-      nome: string;
-      email: string;
-      senha: string;
-      role: Role;
-    }>;
+    "/:id",
+    authMiddleware,
+    allowRoles(Role.ADMIN),
+    async (req: Request, res: Response) => {
+        const { id } = req.params;
 
-    try {
-      const data: any = { nome, email };
-      if (senha) data.senha = await bcrypt.hash(senha, 10);
-      if (role && Object.values(Role).includes(role)) data.role = role;
+        const {
+            nome,
+            email,
+            bi_number,
+            senha,
+            role,
+            departamentoId,
+            especialidadesIds,
+        } = req.body as Partial<{
+            nome: string;
+            email: string;
+            bi_number: string;
+            senha: string;
+            role: Role;
+            departamentoId: number | null;
+            especialidadesIds: number[];
+        }>;
 
-      const usuarioAtualizado = await prisma.usuario.update({
-        where: { id: parseInt(id) },
-        data,
-      });
+        try {
+            const data: any = {};
 
-      res.json({ sucesso: true, dados: usuarioAtualizado });
-    } catch (e: any) {
-      res.status(400).json({
-        sucesso: false,
-        erro: "Não foi possível atualizar o usuário.",
-        detalhes: e.message,
-      });
+            // -----------------------------
+            // Dados básicos
+            // -----------------------------
+
+            if (nome !== undefined) {
+                data.nome = nome;
+            }
+
+            if (email !== undefined) {
+                data.email = email;
+            }
+
+            if (bi_number !== undefined) {
+                data.bi_number = bi_number.trim().toUpperCase();
+            }
+
+            // -----------------------------
+            // Senha
+            // -----------------------------
+
+            if (senha) {
+                data.senha = await bcrypt.hash(senha, 10);
+            }
+
+            // -----------------------------
+            // Role
+            // -----------------------------
+
+            if (
+                role !== undefined &&
+                Object.values(Role).includes(role)
+            ) {
+                data.role = role;
+            }
+
+            // -----------------------------
+            // Departamento
+            // -----------------------------
+
+            if (departamentoId !== undefined) {
+                data.departamentoId = departamentoId;
+            }
+
+            // -----------------------------
+            // Especialidades
+            // -----------------------------
+
+            if (especialidadesIds !== undefined) {
+                data.especialidades = {
+                    set: especialidadesIds.map((id) => ({
+                        id: Number(id),
+                    })),
+                };
+            }
+
+            // -----------------------------
+            // Atualizar usuário
+            // -----------------------------
+
+            const usuarioAtualizado = await prisma.usuario.update({
+                where: {
+                    id: parseInt(id),
+                },
+
+                data,
+
+                include: {
+                    especialidades: true,
+                    departamento: true,
+                },
+            });
+
+            // -----------------------------
+            // Remover senha da resposta
+            // -----------------------------
+
+            const { senha: _, ...usuarioSemSenha } = usuarioAtualizado;
+
+            return res.json({
+                sucesso: true,
+                dados: usuarioSemSenha,
+            });
+        } catch (e: any) {
+            console.error(e);
+
+            return res.status(400).json({
+                sucesso: false,
+                erro: "Não foi possível atualizar o usuário.",
+                detalhes: e.message,
+            });
+        }
     }
-  }
 );
 
 // ============================
