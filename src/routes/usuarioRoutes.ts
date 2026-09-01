@@ -151,7 +151,7 @@ router.post(
         erro: "Erro ao criar usuário.",
         detalhes: e.message,
       });
-      
+
     }
   }
 );
@@ -160,26 +160,26 @@ router.post(
 // READ - Listar todos os usuários
 // ============================
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
-   const { role } = req.query;
+  const { role } = req.query;
 
   try {
     const usuarios = await prisma.usuario.findMany({
-            orderBy: {
-                createdAt: "desc",
-            },
+      orderBy: {
+        createdAt: "desc",
+      },
 
-            where: role
-                ? {
-                      role: role as Role,
-                  }
-                : undefined,
+      where: role
+        ? {
+          role: role as Role,
+        }
+        : undefined,
 
-            include: {
-                departamento: true,
-                especialidades: true,
-            },
-        })
-    
+      include: {
+        departamento: true,
+        especialidades: true,
+      },
+    })
+
     res.json({ sucesso: true, total: usuarios.length, dados: usuarios });
 
   } catch (e: any) {
@@ -190,6 +190,217 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
     });
   }
 });
+
+
+// ============================
+// UPDATE - Atualizar usuário (Admin pode atualizar role e senha)
+// ============================
+router.put(
+  "/:id",
+  authMiddleware,
+  allowRoles(Role.ADMIN),
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const {
+      nome,
+      email,
+      bi_number,
+      senha,
+      role,
+      departamentoId,
+      especialidadesIds,
+    } = req.body as Partial<{
+      nome: string;
+      email: string;
+      bi_number: string;
+      senha: string;
+      role: Role;
+      departamentoId: number | null;
+      especialidadesIds: number[];
+    }>;
+
+    try {
+      const data: any = {};
+
+      // -----------------------------
+      // Dados básicos
+      // -----------------------------
+
+      if (nome !== undefined) {
+        data.nome = nome;
+      }
+
+      if (email !== undefined) {
+        data.email = email;
+      }
+
+      if (bi_number !== undefined) {
+        data.bi_number = bi_number.trim().toUpperCase();
+      }
+
+      // -----------------------------
+      // Senha
+      // -----------------------------
+
+      if (senha) {
+        data.senha = await bcrypt.hash(senha, 10);
+      }
+
+      // -----------------------------
+      // Role
+      // -----------------------------
+
+      if (
+        role !== undefined &&
+        Object.values(Role).includes(role)
+      ) {
+        data.role = role;
+      }
+
+      // -----------------------------
+      // Departamento
+      // -----------------------------
+
+      if (departamentoId !== undefined) {
+        data.departamentoId = departamentoId;
+      }
+
+      // -----------------------------
+      // Especialidades
+      // -----------------------------
+
+      if (especialidadesIds !== undefined) {
+        data.especialidades = {
+          set: especialidadesIds.map((id) => ({
+            id: Number(id),
+          })),
+        };
+      }
+
+      // -----------------------------
+      // Atualizar usuário
+      // -----------------------------
+
+      const usuarioAtualizado = await prisma.usuario.update({
+        where: {
+          id: parseInt(id),
+        },
+
+        data,
+
+        include: {
+          especialidades: true,
+          departamento: true,
+        },
+      });
+
+      // -----------------------------
+      // Remover senha da resposta
+      // -----------------------------
+
+      const { senha: _, ...usuarioSemSenha } = usuarioAtualizado;
+
+      return res.json({
+        sucesso: true,
+        dados: usuarioSemSenha,
+      });
+    } catch (e: any) {
+      console.error(e);
+
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Não foi possível atualizar o usuário.",
+        detalhes: e.message,
+      });
+    }
+  }
+);
+
+// ============================
+// DELETE - Remover usuário (Somente Admin)
+// ============================
+router.delete(
+  "/:id",
+  authMiddleware,
+  allowRoles(Role.ADMIN),
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    try {
+      await prisma.usuario.delete({ where: { id: parseInt(id) } });
+      res.json({ sucesso: true, mensagem: "Usuário deletado com sucesso." });
+    } catch (e: any) {
+      res.status(400).json({
+        sucesso: false,
+        erro: "Não foi possível deletar o usuário.",
+        detalhes: e.message,
+      });
+    }
+  }
+);
+
+// ============================
+// READ - Detalhes do usuário autenticado
+// ============================
+router.get(
+  "/details",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const usuarioId = (req as any).usuario.id;
+
+      const usuario = await prisma.usuario.findUnique({
+        where: {
+          id: usuarioId,
+        },
+        select: {
+          id: true,
+          nome: true,
+          email: true,
+          bi_number: true,
+          role: true,
+          departamentoId: true,
+          createdAt: true,
+          atualizadoEm: true,
+
+          departamento: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+        },
+      });
+
+      if (!usuario) {
+        return res.status(404).json({
+          sucesso: false,
+          erro: "Utilizador não encontrado.",
+        });
+      }
+
+      return res.status(200).json({
+        sucesso: true,
+        dados: usuario,
+      });
+
+    } catch (error: any) {
+      console.error("Erro ao buscar usuário:", error);
+
+      return res.status(500).json({
+        sucesso: false,
+        erro: "Erro ao buscar usuário.",
+        detalhes: req.usuario,
+      });
+    }
+  }
+);
+
+/// ============================
+// UPDATE - Atualizar perfil do usuário autenticado
+// ============================
+
 
 // ============================
 // READ - Buscar usuário por ID
@@ -215,149 +426,77 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// ============================
-// UPDATE - Atualizar usuário (Admin pode atualizar role e senha)
-// ============================
-router.put(
-    "/:id",
-    authMiddleware,
-    allowRoles(Role.ADMIN),
-    async (req: Request, res: Response) => {
-        const { id } = req.params;
-
-        const {
-            nome,
-            email,
-            bi_number,
-            senha,
-            role,
-            departamentoId,
-            especialidadesIds,
-        } = req.body as Partial<{
-            nome: string;
-            email: string;
-            bi_number: string;
-            senha: string;
-            role: Role;
-            departamentoId: number | null;
-            especialidadesIds: number[];
-        }>;
-
-        try {
-            const data: any = {};
-
-            // -----------------------------
-            // Dados básicos
-            // -----------------------------
-
-            if (nome !== undefined) {
-                data.nome = nome;
-            }
-
-            if (email !== undefined) {
-                data.email = email;
-            }
-
-            if (bi_number !== undefined) {
-                data.bi_number = bi_number.trim().toUpperCase();
-            }
-
-            // -----------------------------
-            // Senha
-            // -----------------------------
-
-            if (senha) {
-                data.senha = await bcrypt.hash(senha, 10);
-            }
-
-            // -----------------------------
-            // Role
-            // -----------------------------
-
-            if (
-                role !== undefined &&
-                Object.values(Role).includes(role)
-            ) {
-                data.role = role;
-            }
-
-            // -----------------------------
-            // Departamento
-            // -----------------------------
-
-            if (departamentoId !== undefined) {
-                data.departamentoId = departamentoId;
-            }
-
-            // -----------------------------
-            // Especialidades
-            // -----------------------------
-
-            if (especialidadesIds !== undefined) {
-                data.especialidades = {
-                    set: especialidadesIds.map((id) => ({
-                        id: Number(id),
-                    })),
-                };
-            }
-
-            // -----------------------------
-            // Atualizar usuário
-            // -----------------------------
-
-            const usuarioAtualizado = await prisma.usuario.update({
-                where: {
-                    id: parseInt(id),
-                },
-
-                data,
-
-                include: {
-                    especialidades: true,
-                    departamento: true,
-                },
-            });
-
-            // -----------------------------
-            // Remover senha da resposta
-            // -----------------------------
-
-            const { senha: _, ...usuarioSemSenha } = usuarioAtualizado;
-
-            return res.json({
-                sucesso: true,
-                dados: usuarioSemSenha,
-            });
-        } catch (e: any) {
-            console.error(e);
-
-            return res.status(400).json({
-                sucesso: false,
-                erro: "Não foi possível atualizar o usuário.",
-                detalhes: e.message,
-            });
-        }
-    }
-);
-
-// ============================
-// DELETE - Remover usuário (Somente Admin)
-// ============================
-router.delete(
-  "/:id",
+router.patch(
+  "/profile",
   authMiddleware,
-  allowRoles(Role.ADMIN),
   async (req: Request, res: Response) => {
-    const { id } = req.params;
-
     try {
-      await prisma.usuario.delete({ where: { id: parseInt(id) } });
-      res.json({ sucesso: true, mensagem: "Usuário deletado com sucesso." });
-    } catch (e: any) {
-      res.status(400).json({
+      const usuarioId = (req as any).usuario.id;
+
+      const {
+        nome,
+        email,
+        bi_number,
+      } = req.body;
+
+      const usuario = await prisma.usuario.findUnique({
+        where: {
+          id: usuarioId,
+        },
+      });
+
+      if (!usuario) {
+        return res.status(404).json({
+          sucesso: false,
+          erro: "Utilizador não encontrado",
+        });
+      }
+
+      const atualizado = await prisma.usuario.update({
+        where: {
+          id: usuarioId,
+        },
+        data: {
+          nome,
+          email,
+          bi_number,
+        },
+        select: {
+          id: true,
+          nome: true,
+          email: true,
+          bi_number: true,
+          role: true,
+          departamentoId: true,
+          createdAt: true,
+          atualizadoEm: true,
+
+          departamento: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+          especialidades: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+        },
+      });
+
+      return res.status(200).json({
+        sucesso: true,
+        mensagem: "Perfil atualizado com sucesso",
+        dados: atualizado,
+      });
+    } catch (error: any) {
+      console.error("Erro ao atualizar perfil:", error);
+
+      return res.status(500).json({
         sucesso: false,
-        erro: "Não foi possível deletar o usuário.",
-        detalhes: e.message,
+        erro: "Erro interno do servidor",
       });
     }
   }
