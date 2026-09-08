@@ -174,12 +174,20 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
         }
         : undefined,
 
-      include: {
-        departamento: true,
-        especialidades: true,
-      },
+      select: {
+            id: true,
+            nome: true,
+            email: true,
+            bi_number: true,
+            role: true,
+            departamentoId: true,
+            createdAt: true,
+            atualizadoEm: true,
+            departamento: true,
+            especialidades: true,
+        }
     })
-
+    
     res.json({ sucesso: true, total: usuarios.length, dados: usuarios });
 
   } catch (e: any) {
