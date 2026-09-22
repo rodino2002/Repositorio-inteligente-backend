@@ -9,6 +9,7 @@ import { normalizar } from "../utils/normalizaTexto";
 import { redis } from "../lib/redis";
 import crypto from "crypto"
 import { calcularScore } from "../services/calcularScore.service";
+import { buscarTrabalhosRelacionados } from "../utils/trabalhosRelacionados";
 
 
 const prisma = new PrismaClient();
@@ -140,8 +141,13 @@ router.post(
       // invalidar TODOS os caches relacionados
       const keys = await redis.keys("trabalhos:list:*");
 
-      if (keys.length) {
-        await redis.del(keys);
+      const keysToDelete = [
+        ...keys,
+        "dashboard:cards",
+      ];
+
+      if (keysToDelete.length) {
+        await redis.del(keysToDelete);
       }
 
       return res.status(201).json({
@@ -514,8 +520,13 @@ router.put(
       // invalidar TODOS os caches relacionados
       const keys = await redis.keys("trabalhos:list:*");
 
-      if (keys.length) {
-        await redis.del(keys);
+      const keysToDelete = [
+        ...keys,
+        "dashboard:cards",
+      ];
+
+      if (keysToDelete.length) {
+        await redis.del(keysToDelete);
       }
 
       res.json({ sucesso: true, dados: atualizado });
@@ -569,8 +580,13 @@ router.patch(
       // invalidar TODOS os caches relacionados
       const keys = await redis.keys("trabalhos:list:*");
 
-      if (keys.length) {
-        await redis.del(keys);
+      const keysToDelete = [
+        ...keys,
+        "dashboard:cards",
+      ];
+
+      if (keysToDelete.length) {
+        await redis.del(keysToDelete);
       }
 
       res.json({ sucesso: true, dados: trabalho });
@@ -598,8 +614,13 @@ router.patch(
       //  invalidar TODOS os caches relacionados
       const keys = await redis.keys("trabalhos:list:*");
 
-      if (keys.length) {
-        await redis.del(keys);
+      const keysToDelete = [
+        ...keys,
+        "dashboard:cards",
+      ];
+
+      if (keysToDelete.length) {
+        await redis.del(keysToDelete);
       }
 
       res.json({ sucesso: true, dados: trabalho });
@@ -652,146 +673,5 @@ router.patch(
   }
 );
 
-// ============================
-// BUSCA INTELIGENTE - Similaridade de cosseno com embeddings
-// ============================
-router.post(
-  "/buscar-inteligente",
-  async (req: Request, res: Response) => {
-
-    const { query, threshold = 0.4 } = req.body;
-
-    if (!query?.trim()) {
-      return res.status(400).json({
-        sucesso: false,
-        erro: "Query é obrigatória",
-      });
-    }
-
-    const hash = crypto.createHash("md5").update(JSON.stringify(req.body)).digest("hex")
-    const cacheKey = `trabalhos:busca-inteligente:${hash}`
-
-    let cachedData: string | null = null
-
-    try {
-
-      cachedData = await redis.get(cacheKey)
-
-      if (cachedData) {
-        return res.json(JSON.parse(cachedData))
-      }
-
-    } catch (error) {
-      console.warn("Redis indisponível, seguindo sem cache")
-    }
-
-    try {
-
-      //const textoQuery = normalizar(`Titulo: ${query}\nResumo: ${query}`);
-      const textoQuery = normalizar(query);
-
-      // 🔹 Geração do embedding da query
-      const queryEmbedding = await generateEmbedding(textoQuery);
-
-      //console.log("🔹 Query embedding gerado. Dimensão:", queryEmbedding.length);
-
-      // 🔹 Transformar embedding em array para SQL
-      const embeddingSql = `ARRAY[${queryEmbedding.map(n => n.toFixed(6)).join(",")}]::float8[]`;
-
-      // 🔹 Buscar TCCs com similaridade de cosseno
-      const resultadosRaw = await prisma.$queryRawUnsafe(`
-  SELECT
-    t.id,
-    t.titulo,
-    t.resumo,
-    t."fileUrl",
-    t.status,
-    t."createdAt",
-
-    cosine_similarity(t.embedding, ${embeddingSql}) AS similarity,
-
-    json_build_object(
-      'id', u.id,
-      'nome', u.nome
-    ) AS autor,
-
-    json_build_object(
-      'id', d.id,
-      'nome', d.nome
-    ) AS departamento,
-
-    COALESCE(
-      json_agg(
-        json_build_object(
-          'id', e.id,
-          'nome', e.nome,
-          'descricao', e.descricao
-        )
-      ) FILTER (WHERE e.id IS NOT NULL),
-      '[]'
-    ) AS especialidades
-
-  FROM "Trabalho" t
-
-  LEFT JOIN "Usuario" u
-    ON u.id = t."autorId"
-
-  LEFT JOIN "Departamento" d
-    ON d.id = t."departamentoId"
-
-  LEFT JOIN "_TrabalhoEspecialidade" te
-  ON te."B" = t.id
-
-  LEFT JOIN "Especialidade" e
-  ON e.id = te."A"
-
-  WHERE t.embedding IS NOT NULL
-    AND t.status = 'APROVADO'
-
-  GROUP BY t.id, u.id, d.id
-
-  ORDER BY similarity DESC
-  LIMIT 10;
-`);
-
-      const ranked = (resultadosRaw as any[])
-        .map(item => ({
-          ...item,
-          score: calcularScore(query, item),
-        }))
-        .sort((a, b) => b.score - a.score);
-
-      const resultadosFiltrados = ranked.filter(
-        r => r.score >= threshold // antes  r => r.similarity >= threshold
-      );
-
-      const payload = {
-        sucesso: true,
-        query,
-        threshold,
-        totalEncontrados: resultadosFiltrados.length,
-        resultados: resultadosFiltrados,
-      };
-
-      // adicionando no cache para acelerar buscas futuras idênticas
-      try {
-        await redis.set(cacheKey, JSON.stringify(payload), { EX: 60 })
-      } catch {
-        console.warn("Não foi possível salvar no cache")
-      }
-
-      return res.json(payload);
-
-    } catch (error) {
-      console.error(" ERRO BUSCAR-INTELIGENTE:", error);
-      return res.status(500).json({
-        sucesso: false,
-        erro: error instanceof Error ? error.message : error,
-      });
-    }
-  }
-);
-
-
-
 export default router;
+

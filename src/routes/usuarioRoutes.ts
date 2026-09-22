@@ -138,6 +138,8 @@ router.post(
       // remove senha antes de enviar
       const { senha: _, ...usuarioSemSenha } = novoUsuario;
 
+      
+
       return res.status(201).json({
         sucesso: true,
         dados: usuarioSemSenha,
