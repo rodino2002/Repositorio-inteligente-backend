@@ -64,7 +64,7 @@ model Trabalho {
   titulo         String
   resumo         String?
   fileUrl        String?
-  status         TrabalhoStatus     @default(RASCUNHO)
+  status         TrabalhoStatus     @default(PENDENTE)
   dataPublicacao DateTime?
   autorId        Int
   departamentoId Int?

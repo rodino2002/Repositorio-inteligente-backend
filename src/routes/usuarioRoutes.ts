@@ -1,11 +1,12 @@
 // src/routes/usuarioRoutes.ts
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { allowRoles } from "../middleware/roleMiddleware";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { Role } from "@prisma/client";
 import { validarBI } from "../services/biValidation.service";
+import { redis } from "../lib/redis";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -135,10 +136,13 @@ router.post(
         },
       });
 
+      // 🔄 Invalidar cache da dashboard
+      await redis.del("dashboard:cards");
+
       // remove senha antes de enviar
       const { senha: _, ...usuarioSemSenha } = novoUsuario;
 
-      
+
 
       return res.status(201).json({
         sucesso: true,
@@ -162,38 +166,56 @@ router.post(
 // READ - Listar todos os usuários
 // ============================
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
-  const { role } = req.query;
+  const { role, page, per_page } = req.query;
+
+  const pageNumber = Math.max(Number(page) || 1, 1);
+  const limitNumber = Math.max(Number(per_page) || 20, 1);
+  const skip = (pageNumber - 1) * limitNumber;
 
   try {
-    const usuarios = await prisma.usuario.findMany({
-      orderBy: {
-        createdAt: "desc",
+    const where: Prisma.UsuarioWhereInput = {
+      role: role ? (role as Role) : undefined,
+    };
+
+    const [usuarios, total] = await Promise.all([
+      prisma.usuario.findMany({
+        where,
+        skip,
+        take: limitNumber,
+        orderBy: {
+          createdAt: "desc",
+        },
+        select: {
+          id: true,
+          nome: true,
+          email: true,
+          bi_number: true,
+          role: true,
+          departamentoId: true,
+          createdAt: true,
+          atualizadoEm: true,
+          departamento: true,
+          especialidades: true,
+        },
+      }),
+      prisma.usuario.count({
+        where,
+      }),
+    ]);
+
+    return res.json({
+      sucesso: true,
+      paginacao: {
+        totalItems: total,
+        totalPaginas: Math.ceil(total / limitNumber),
+        paginaAtual: pageNumber,
+        itensPorPagina: limitNumber,
+        totalItemsNaPagina: usuarios.length,
       },
-
-      where: role
-        ? {
-          role: role as Role,
-        }
-        : undefined,
-
-      select: {
-            id: true,
-            nome: true,
-            email: true,
-            bi_number: true,
-            role: true,
-            departamentoId: true,
-            createdAt: true,
-            atualizadoEm: true,
-            departamento: true,
-            especialidades: true,
-        }
-    })
-    
-    res.json({ sucesso: true, total: usuarios.length, dados: usuarios });
-
+      dados: usuarios,
+    });
   } catch (e: any) {
-    res.status(500).json({
+    return res.status(500).json({
       sucesso: false,
       erro: "Não foi possível listar os usuários.",
       detalhes: e.message,
@@ -340,6 +362,10 @@ router.delete(
     try {
       await prisma.usuario.delete({ where: { id: parseInt(id) } });
       res.json({ sucesso: true, mensagem: "Usuário deletado com sucesso." });
+
+      // 🔄 Invalidar cache da dashboard
+      await redis.del("dashboard:cards");
+
     } catch (e: any) {
       res.status(400).json({
         sucesso: false,
@@ -436,6 +462,9 @@ router.get("/:id", authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// ============================
+// READ - Buscar perfil do usuario logado
+// ============================
 router.patch(
   "/profile",
   authMiddleware,

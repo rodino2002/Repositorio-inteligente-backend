@@ -169,173 +169,143 @@ router.post(
 // LIST - Listar Trabalhos
 // ============================
 router.get("/", async (req: Request, res: Response) => {
+  const { departamentoId, autorNome, especialidadeId, status, start_date, end_date, page, per_page, tipoTrabalhoId, tag } = req.query;
 
-  const {
-    departamentoId,
-    autorNome,
-    especialidadeId,
-    status,
-    start_date,
-    end_date,
-    page,
-    per_page,
-    tipoTrabalhoId,
-    tag, // palavra-chave para busca no título ou resumo,
-  } = req.query;
-  const pageNumber = Number(page) || 1;
-  const limitNumber = Number(per_page) || 20;
-
-  const startDate = start_date
-    ? new Date(String(start_date))
-    : undefined;
-
-  const endDate = end_date
-    ? new Date(String(end_date))
-    : undefined;
-
-  if (endDate) {
-    endDate.setHours(23, 59, 59, 999);
-  }
-
+  const pageNumber = Math.max(Number(page) || 1, 1);
+  const limitNumber = Math.max(Number(per_page) || 20, 1);
   const skip = (pageNumber - 1) * limitNumber;
-  const cacheKey =
-    `trabalhos:list:` +
-    `dep=${departamentoId ?? "all"}:` +
-    `autor=${autorNome ?? "all"}:` +
-    `esp=${especialidadeId ?? "all"}:` +
-    `status=${status ?? "all"}:` +
-    `start=${start_date ?? "none"}:` +
-    `tipo=${tipoTrabalhoId ?? "all"}:` +
-    `end=${end_date ?? "none"}:` +
-    `page=${pageNumber}:` +
-    `per_page=${limitNumber}`;
 
-  let cachedData: string | null = null
+  const startDate = start_date ? new Date(String(start_date)) : undefined;
+  const endDate = end_date ? new Date(String(end_date)) : undefined;
+  if (endDate) endDate.setHours(23, 59, 59, 999);
+
+  const cacheKey = `trabalhos:list:dep=${departamentoId ?? "all"}:autor=${autorNome ?? "all"}:esp=${especialidadeId ?? "all"}:status=${status ?? "all"}:start=${start_date ?? "none"}:end=${end_date ?? "none"}:tipo=${tipoTrabalhoId ?? "all"}:tag=${tag ?? "none"}:page=${pageNumber}:per_page=${limitNumber}`;
 
   try {
-    cachedData = await redis.get(cacheKey)
+    let cachedData: string | null = null;
 
-    if (cachedData) {
-      return res.json(JSON.parse(cachedData))
+    try {
+      cachedData = await redis.get(cacheKey);
+      if (cachedData) return res.json(JSON.parse(cachedData));
+    } catch (err) {
+      console.warn("Redis indisponível, seguindo sem cache");
     }
 
-  } catch (err) {
-    console.warn("Redis indisponível, seguindo sem cache")
-  }
-
-  try {
     const where: Prisma.TrabalhoWhereInput = {
-      tipoTrabalhoId: tipoTrabalhoId
-        ? Number(tipoTrabalhoId)
-        : undefined,
-
-      departamentoId: departamentoId
-        ? Number(departamentoId)
-        : undefined,
-
+      tipoTrabalhoId: tipoTrabalhoId ? Number(tipoTrabalhoId) : undefined,
+      departamentoId: departamentoId ? Number(departamentoId) : undefined,
       autor: autorNome
         ? {
-          nome: {
-            contains: String(autorNome),
-            mode: "insensitive",
-          },
-        }
+            nome: {
+              contains: String(autorNome),
+              mode: "insensitive",
+            },
+          }
         : undefined,
-
       especialidades: especialidadeId
         ? {
-          some: {
-            id: Number(especialidadeId),
-          },
-        }
-        : undefined,
-
-      status: status
-        ? (status as TrabalhoStatus)
-        : undefined,
-
-      createdAt:
-        startDate || endDate
-          ? {
-            gte: startDate,
-            lte: endDate,
+            some: {
+              id: Number(especialidadeId),
+            },
           }
-          : undefined,
+        : undefined,
+      status: status ? (status as TrabalhoStatus) : undefined,
+      createdAt: startDate || endDate ? { gte: startDate, lte: endDate } : undefined,
+      ...(tag
+        ? {
+            OR: [
+              {
+                titulo: {
+                  contains: String(tag),
+                  mode: "insensitive",
+                },
+              },
+              {
+                resumo: {
+                  contains: String(tag),
+                  mode: "insensitive",
+                },
+              },
+            ],
+          }
+        : {}),
     };
 
-    const trabalhos = await prisma.trabalho.findMany({
-      where,
-      skip,
-      take: limitNumber,
-
-      select: {
-        id: true,
-        titulo: true,
-        resumo: true,
-        fileUrl: true,
-        status: true,
-        dataPublicacao: true,
-        createdAt: true,
-        atualizadoEm: true,
-        autor: {
-          select: {
-            id: true,
-            nome: true,
+    const [trabalhos, total] = await Promise.all([
+      prisma.trabalho.findMany({
+        where,
+        skip,
+        take: limitNumber,
+        select: {
+          id: true,
+          titulo: true,
+          resumo: true,
+          fileUrl: true,
+          status: true,
+          dataPublicacao: true,
+          createdAt: true,
+          atualizadoEm: true,
+          autor: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+          departamento: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+          especialidades: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+          motivoRejeicao: true,
+          tipoTrabalho: {
+            select: {
+              id: true,
+              nome: true,
+            },
           },
         },
-        departamento: {
-          select: {
-            id: true,
-            nome: true,
-          },
+        orderBy: {
+          createdAt: "desc",
         },
-        especialidades: {
-          select: {
-            id: true,
-            nome: true,
-          }
-        },
-        motivoRejeicao: true,
-        tipoTrabalho: {
-          select: {
-            id: true,
-            nome: true,
-          }
-        },
-      },
+      }),
+      prisma.trabalho.count({ where }),
+    ]);
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-    const total = await prisma.trabalho.count({
-      where
-    });
+    const totalPaginas = Math.ceil(total / limitNumber);
 
     const responsePayload = {
       sucesso: true,
-
       paginacao: {
         totalItems: total,
-        totalPaginas: Math.ceil(total / limitNumber),
+        totalPaginas,
         paginaAtual: pageNumber,
         itensPorPagina: limitNumber,
         totalItemsNaPagina: trabalhos.length,
       },
-
       dados: trabalhos,
     };
 
-    await redis.set(cacheKey, JSON.stringify(responsePayload), {
-      EX: 60,
-    }) // cache por 60 segundos no redis
+    try {
+      await redis.set(cacheKey, JSON.stringify(responsePayload), {
+        EX: 60,
+      });
+    } catch (err) {
+      console.warn("Não foi possível guardar a lista de trabalhos no Redis");
+    }
 
-    return res.json(responsePayload)
-
-
+    return res.json(responsePayload);
   } catch (e: any) {
-    res.status(500).json({ sucesso: false, erro: e.message });
+    return res.status(500).json({
+      sucesso: false,
+      erro: e.message,
+    });
   }
 });
 
