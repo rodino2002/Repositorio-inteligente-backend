@@ -1,6 +1,6 @@
 import express, { Application } from "express";
 import cors from "cors";
-import swaggerUi from "swagger-ui-express";
+// import swaggerUi from "swagger-ui-express";
 
 import usuarioRoutes from "./routes/usuarioRoutes";
 import authRoutes from "./routes/authRoutes";
@@ -12,7 +12,7 @@ import { SendOTP } from "./routes/sendOTP";
 import { RefreshToken } from "./routes/refreshToken";
 import buscaInteligente from "./routes/buscaInteligente";
 import { errorHandler } from "./middleware/globalMiddleware";
-import { swaggerSpec } from "./docs/swagger";
+// import { swaggerSpec } from "./docs/swagger";
 import dashboardRouter from "./routes/dashboard";
 
 const apiV1 = "/api/v1";
@@ -22,18 +22,18 @@ const app: Application = express();
 app.use(cors());
 app.use(express.json());
 
-app.use(
-  "/docs",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec)
-);
+// app.use(
+//   "/docs",
+//   swaggerUi.serve,
+//   swaggerUi.setup(swaggerSpec)
+// );
 
-app.get("/swagger.json", (_req, res) => {
-  res.json(swaggerSpec);
-});
+// app.get("/swagger.json", (_req, res) => {
+//   res.json(swaggerSpec);
+// });
 
 // Routes
-app.use("/uploads", express.static("uploads"));
+// app.use("/uploads", express.static("uploads"));
 
 app.use(`${apiV1}/upload`, uploadRouter);
 app.use(`${apiV1}/trabalhos`, trabalhosRoutes);

@@ -1,14 +1,38 @@
-import { pipeline } from "@xenova/transformers";
+// import { pipeline } from "@xenova/transformers";
 
+// let embedder: any = null;
+
+// export async function getEmbedder() {
+//   if (!embedder) {
+//     embedder = await pipeline(
+//       "feature-extraction",
+//       "Xenova/paraphrase-multilingual-MiniLM-L12-v2"
+//     );
+    
+//     console.log("✅ Embedder carregado");
+//   }
+//   return embedder;
+// }
+
+// export async function generateEmbedding(text: string) {
+//   const model = await getEmbedder();
+
+//   const output = await model(text, {
+//     pooling: "mean",
+//     normalize: true,
+//   });
+
+//   return output.data as number[];
+// }
 let embedder: any = null;
 
 export async function getEmbedder() {
   if (!embedder) {
+    const { pipeline } = await import("@xenova/transformers");
     embedder = await pipeline(
       "feature-extraction",
       "Xenova/paraphrase-multilingual-MiniLM-L12-v2"
     );
-    
     console.log("✅ Embedder carregado");
   }
   return embedder;
@@ -16,11 +40,9 @@ export async function getEmbedder() {
 
 export async function generateEmbedding(text: string) {
   const model = await getEmbedder();
-
   const output = await model(text, {
     pooling: "mean",
     normalize: true,
   });
-
   return output.data as number[];
 }

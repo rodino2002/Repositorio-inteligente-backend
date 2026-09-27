@@ -7,9 +7,7 @@ import { TrabalhoStatus } from "@prisma/client";
 import { generateEmbedding } from "../services/embedding.service";
 import { normalizar } from "../utils/normalizaTexto";
 import { redis } from "../lib/redis";
-import crypto from "crypto"
-import { calcularScore } from "../services/calcularScore.service";
-import { buscarTrabalhosRelacionados } from "../utils/trabalhosRelacionados";
+
 
 
 const prisma = new PrismaClient();
