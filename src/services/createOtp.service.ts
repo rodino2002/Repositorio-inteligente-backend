@@ -1,8 +1,6 @@
-import { PrismaClient } from "@prisma/client";
 import { sendOtpEmail } from "../config/mailer";
+import { prisma } from "../config/prisma";
 
-
-const prisma = new PrismaClient();
 
 export const gerarOtp = async (email: string) => {
   // Gerar código OTP aleatório de 6 dígitos

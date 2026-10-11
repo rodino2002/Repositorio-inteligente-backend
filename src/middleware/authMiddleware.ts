@@ -1,8 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_KEY || "keysecret";
+const JWT_SECRET = process.env.JWT_KEY;
 
+if (!JWT_SECRET) {
+  throw new Error("JWT_KEY não está configurada.");
+}
 // Interface para o payload do JWT
 interface JwtPayload {
   id: number;

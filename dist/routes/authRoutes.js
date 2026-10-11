@@ -4,12 +4,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const client_1 = require("@prisma/client");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const biValidation_service_1 = require("../services/biValidation.service");
 const jwt_1 = require("../utils/jwt");
 const role_1 = require("../types/role");
-const prisma = new client_1.PrismaClient();
+const prisma_1 = require("../config/prisma");
 const router = (0, express_1.Router)();
 const JWT_SECRET = process.env.JWT_KEY || "keysecret";
 // Registro
@@ -51,7 +50,7 @@ router.post("/register", async (req, res) => {
         // 3. Validar Departamento se enviado
         // -----------------------------
         if (departamentoId !== undefined && departamentoId !== null) {
-            const deptExiste = await prisma.departamento.findUnique({
+            const deptExiste = await prisma_1.prisma.departamento.findUnique({
                 where: { id: Number(departamentoId) },
             });
             if (!deptExiste) {
@@ -65,7 +64,7 @@ router.post("/register", async (req, res) => {
         // 4. Validar Especialidades se enviadas
         // -----------------------------
         if (especialidadesIds?.length) {
-            const existentes = await prisma.especialidade.findMany({
+            const existentes = await prisma_1.prisma.especialidade.findMany({
                 where: { id: { in: especialidadesIds } },
             });
             if (existentes.length !== especialidadesIds.length) {
@@ -80,7 +79,7 @@ router.post("/register", async (req, res) => {
         // -----------------------------
         const senhaHashed = await bcryptjs_1.default.hash(senha, 10);
         const biNormalizado = bi_number.trim().toUpperCase(); // formatar o número de BI
-        const novoUsuario = await prisma.usuario.create({
+        const novoUsuario = await prisma_1.prisma.usuario.create({
             data: {
                 nome,
                 email,
@@ -117,7 +116,7 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
     const { email, senha } = req.body;
     try {
-        const usuario = await prisma.usuario.findUnique({
+        const usuario = await prisma_1.prisma.usuario.findUnique({
             where: { email },
         });
         if (!usuario) {

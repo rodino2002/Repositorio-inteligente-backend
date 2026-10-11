@@ -1,11 +1,9 @@
-import { PrismaClient } from "@prisma/client";
 import { Request, Response, Router } from "express";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { redis } from "../lib/redis";
+import { prisma } from "../config/prisma";
 
 
-
-const prisma = new PrismaClient();
 const router = Router()
 
 // ============================

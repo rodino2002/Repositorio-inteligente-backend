@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { allowRoles } from "../middleware/roleMiddleware";
 import { Role } from "../types/role";
@@ -7,10 +7,9 @@ import { TrabalhoStatus } from "@prisma/client";
 import { generateEmbedding } from "../services/embedding.service";
 import { normalizar } from "../utils/normalizaTexto";
 import { redis } from "../lib/redis";
+import { prisma } from "../config/prisma";
 
 
-
-const prisma = new PrismaClient();
 const router = Router();
 
 

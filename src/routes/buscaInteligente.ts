@@ -1,4 +1,3 @@
-import { PrismaClient } from "@prisma/client";
 import { Request, Response, Router } from "express";
 import { redis } from "../lib/redis";
 import crypto from "crypto"
@@ -6,8 +5,8 @@ import { normalizar } from "../utils/normalizaTexto";
 import { generateEmbedding } from "../services/embedding.service";
 import { escapeSqlString } from "../utils/escapeSqlString";
 import { buscarTrabalhosRelacionados } from "../utils/trabalhosRelacionados";
+import { prisma } from "../config/prisma";
 
-const prisma = new PrismaClient();
 const router = Router()
 
 router.post(

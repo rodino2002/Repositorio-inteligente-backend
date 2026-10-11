@@ -5,18 +5,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/usuarioRoutes.ts
 const express_1 = require("express");
-const client_1 = require("@prisma/client");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const roleMiddleware_1 = require("../middleware/roleMiddleware");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const client_2 = require("@prisma/client");
+const client_1 = require("@prisma/client");
 const biValidation_service_1 = require("../services/biValidation.service");
-const prisma = new client_1.PrismaClient();
+const redis_1 = require("../lib/redis");
+const prisma_1 = require("../config/prisma");
 const router = (0, express_1.Router)();
 // ============================
 // CREATE - Criar novo usuário (Admin pode definir role)
 // ============================
-router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(client_2.Role.ADMIN), async (req, res) => {
+router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(client_1.Role.ADMIN), async (req, res) => {
     try {
         const { nome, email, senha, role, departamentoId, especialidadesIds, bi_number } = req.body;
         // -----------------------------
@@ -46,15 +46,15 @@ router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRole
         // -----------------------------
         // 2. Validar Role (opcional no request)
         // -----------------------------
-        const roleFinal = role ?? client_2.Role.ESTUDANTE;
-        if (!Object.values(client_2.Role).includes(roleFinal)) {
+        const roleFinal = role ?? client_1.Role.ESTUDANTE;
+        if (!Object.values(client_1.Role).includes(roleFinal)) {
             return res.status(400).json({ sucesso: false, erro: "Role inválida." });
         }
         // -----------------------------
         // 3. Validar Departamento se enviado
         // -----------------------------
         if (departamentoId !== undefined && departamentoId !== null) {
-            const deptExiste = await prisma.departamento.findUnique({
+            const deptExiste = await prisma_1.prisma.departamento.findUnique({
                 where: { id: Number(departamentoId) },
             });
             if (!deptExiste) {
@@ -68,7 +68,7 @@ router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRole
         // 4. Validar Especialidades se enviadas
         // -----------------------------
         if (especialidadesIds?.length) {
-            const existentes = await prisma.especialidade.findMany({
+            const existentes = await prisma_1.prisma.especialidade.findMany({
                 where: { id: { in: especialidadesIds } },
             });
             if (existentes.length !== especialidadesIds.length) {
@@ -83,7 +83,7 @@ router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRole
         // -----------------------------
         const senhaHashed = await bcryptjs_1.default.hash(senha, 10);
         const biNormalizado = bi_number.trim().toUpperCase(); // formatar o número de BI
-        const novoUsuario = await prisma.usuario.create({
+        const novoUsuario = await prisma_1.prisma.usuario.create({
             data: {
                 nome,
                 email,
@@ -100,6 +100,8 @@ router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRole
                 departamento: true, // opcional: inclui dados do departamento
             },
         });
+        // 🔄 Invalidar cache da dashboard
+        await redis_1.redis.del("dashboard:cards");
         // remove senha antes de enviar
         const { senha: _, ...usuarioSemSenha } = novoUsuario;
         return res.status(201).json({
@@ -120,34 +122,53 @@ router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRole
 // READ - Listar todos os usuários
 // ============================
 router.get("/", authMiddleware_1.authMiddleware, async (req, res) => {
-    const { role } = req.query;
+    const { role, page, per_page } = req.query;
+    const pageNumber = Math.max(Number(page) || 1, 1);
+    const limitNumber = Math.max(Number(per_page) || 20, 1);
+    const skip = (pageNumber - 1) * limitNumber;
     try {
-        const usuarios = await prisma.usuario.findMany({
-            orderBy: {
-                createdAt: "desc",
+        const where = {
+            role: role ? role : undefined,
+        };
+        const [usuarios, total] = await Promise.all([
+            prisma_1.prisma.usuario.findMany({
+                where,
+                skip,
+                take: limitNumber,
+                orderBy: {
+                    createdAt: "desc",
+                },
+                select: {
+                    id: true,
+                    nome: true,
+                    email: true,
+                    bi_number: true,
+                    role: true,
+                    departamentoId: true,
+                    createdAt: true,
+                    atualizadoEm: true,
+                    departamento: true,
+                    especialidades: true,
+                },
+            }),
+            prisma_1.prisma.usuario.count({
+                where,
+            }),
+        ]);
+        return res.json({
+            sucesso: true,
+            paginacao: {
+                totalItems: total,
+                totalPaginas: Math.ceil(total / limitNumber),
+                paginaAtual: pageNumber,
+                itensPorPagina: limitNumber,
+                totalItemsNaPagina: usuarios.length,
             },
-            where: role
-                ? {
-                    role: role,
-                }
-                : undefined,
-            select: {
-                id: true,
-                nome: true,
-                email: true,
-                bi_number: true,
-                role: true,
-                departamentoId: true,
-                createdAt: true,
-                atualizadoEm: true,
-                departamento: true,
-                especialidades: true,
-            }
+            dados: usuarios,
         });
-        res.json({ sucesso: true, total: usuarios.length, dados: usuarios });
     }
     catch (e) {
-        res.status(500).json({
+        return res.status(500).json({
             sucesso: false,
             erro: "Não foi possível listar os usuários.",
             detalhes: e.message,
@@ -157,7 +178,7 @@ router.get("/", authMiddleware_1.authMiddleware, async (req, res) => {
 // ============================
 // UPDATE - Atualizar usuário (Admin pode atualizar role e senha)
 // ============================
-router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(client_2.Role.ADMIN), async (req, res) => {
+router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(client_1.Role.ADMIN), async (req, res) => {
     const { id } = req.params;
     const { nome, email, bi_number, senha, role, departamentoId, especialidadesIds, } = req.body;
     try {
@@ -184,7 +205,7 @@ router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRo
         // Role
         // -----------------------------
         if (role !== undefined &&
-            Object.values(client_2.Role).includes(role)) {
+            Object.values(client_1.Role).includes(role)) {
             data.role = role;
         }
         // -----------------------------
@@ -206,7 +227,7 @@ router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRo
         // -----------------------------
         // Atualizar usuário
         // -----------------------------
-        const usuarioAtualizado = await prisma.usuario.update({
+        const usuarioAtualizado = await prisma_1.prisma.usuario.update({
             where: {
                 id: parseInt(id),
             },
@@ -237,11 +258,13 @@ router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRo
 // ============================
 // DELETE - Remover usuário (Somente Admin)
 // ============================
-router.delete("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(client_2.Role.ADMIN), async (req, res) => {
+router.delete("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(client_1.Role.ADMIN), async (req, res) => {
     const { id } = req.params;
     try {
-        await prisma.usuario.delete({ where: { id: parseInt(id) } });
+        await prisma_1.prisma.usuario.delete({ where: { id: parseInt(id) } });
         res.json({ sucesso: true, mensagem: "Usuário deletado com sucesso." });
+        // 🔄 Invalidar cache da dashboard
+        await redis_1.redis.del("dashboard:cards");
     }
     catch (e) {
         res.status(400).json({
@@ -257,7 +280,7 @@ router.delete("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allo
 router.get("/details", authMiddleware_1.authMiddleware, async (req, res) => {
     try {
         const usuarioId = req.usuario.id;
-        const usuario = await prisma.usuario.findUnique({
+        const usuario = await prisma_1.prisma.usuario.findUnique({
             where: {
                 id: usuarioId,
             },
@@ -307,7 +330,7 @@ router.get("/details", authMiddleware_1.authMiddleware, async (req, res) => {
 router.get("/:id", authMiddleware_1.authMiddleware, async (req, res) => {
     const { id } = req.params;
     try {
-        const usuario = await prisma.usuario.findUnique({
+        const usuario = await prisma_1.prisma.usuario.findUnique({
             where: { id: parseInt(id) },
         });
         if (!usuario)
@@ -322,11 +345,14 @@ router.get("/:id", authMiddleware_1.authMiddleware, async (req, res) => {
         });
     }
 });
+// ============================
+// READ - Buscar perfil do usuario logado
+// ============================
 router.patch("/profile", authMiddleware_1.authMiddleware, async (req, res) => {
     try {
         const usuarioId = req.usuario.id;
         const { nome, email, bi_number, } = req.body;
-        const usuario = await prisma.usuario.findUnique({
+        const usuario = await prisma_1.prisma.usuario.findUnique({
             where: {
                 id: usuarioId,
             },
@@ -337,7 +363,7 @@ router.patch("/profile", authMiddleware_1.authMiddleware, async (req, res) => {
                 erro: "Utilizador não encontrado",
             });
         }
-        const atualizado = await prisma.usuario.update({
+        const atualizado = await prisma_1.prisma.usuario.update({
             where: {
                 id: usuarioId,
             },

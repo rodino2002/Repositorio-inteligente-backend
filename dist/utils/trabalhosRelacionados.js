@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buscarTrabalhosRelacionados = buscarTrabalhosRelacionados;
-const client_1 = require("@prisma/client");
+const prisma_1 = require("../config/prisma");
 const calcularSimilaridadeCoseno = (vetorA, vetorB) => {
     if (!vetorA ||
         !vetorB ||
@@ -31,7 +31,6 @@ const calcularSimilaridadeCoseno = (vetorA, vetorB) => {
         (Math.sqrt(normaA) *
             Math.sqrt(normaB)));
 };
-const prisma = new client_1.PrismaClient();
 // ============================================================
 // BUSCAR TRABALHOS RELACIONADOS
 // ============================================================
@@ -47,7 +46,7 @@ async function buscarTrabalhosRelacionados(queryEmbedding, idsExcluir = [], limi
     if (idsPrincipais.length === 0) {
         return [];
     }
-    const trabalhosPrincipais = await prisma.trabalho.findMany({
+    const trabalhosPrincipais = await prisma_1.prisma.trabalho.findMany({
         where: {
             id: {
                 in: idsPrincipais
@@ -83,7 +82,7 @@ async function buscarTrabalhosRelacionados(queryEmbedding, idsExcluir = [], limi
     // 5. IDENTIFICAR ESPECIALIDADES PRINCIPAIS
     // ============================================================
     const especialidadesPrincipais = new Set(principaisComEmbedding.flatMap((trabalho) => trabalho.especialidades.map((especialidade) => especialidade.id)));
-    const candidatos = await prisma.trabalho.findMany({
+    const candidatos = await prisma_1.prisma.trabalho.findMany({
         where: {
             status: "APROVADO",
             id: {

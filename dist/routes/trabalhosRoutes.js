@@ -1,22 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const client_1 = require("@prisma/client");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const roleMiddleware_1 = require("../middleware/roleMiddleware");
 const role_1 = require("../types/role");
-const client_2 = require("@prisma/client");
+const client_1 = require("@prisma/client");
 const embedding_service_1 = require("../services/embedding.service");
 const normalizaTexto_1 = require("../utils/normalizaTexto");
 const redis_1 = require("../lib/redis");
-const prisma = new client_1.PrismaClient();
+const prisma_1 = require("../config/prisma");
 const router = (0, express_1.Router)();
 // ============================
 // TIPOS DE TRABALHO
 // ============================
 router.get("/tipos_de_trabalhos", async (req, res) => {
     try {
-        const tipos = await prisma.tipoTrabalho.findMany({
+        const tipos = await prisma_1.prisma.tipoTrabalho.findMany({
             select: {
                 id: true,
                 nome: true,
@@ -38,14 +37,14 @@ router.post("/", authMiddleware_1.authMiddleware, async (req, res) => {
         const autorId = req.usuario.id;
         // Buscar departamento
         const departamento = departamentoId
-            ? await prisma.departamento.findUnique({
+            ? await prisma_1.prisma.departamento.findUnique({
                 where: { id: departamentoId },
                 select: { nome: true },
             })
             : null;
         // Buscar especialidades
         const especialidades = especialidadesIds?.length
-            ? await prisma.especialidade.findMany({
+            ? await prisma_1.prisma.especialidade.findMany({
                 where: {
                     id: {
                         in: especialidadesIds,
@@ -57,12 +56,12 @@ router.post("/", authMiddleware_1.authMiddleware, async (req, res) => {
             })
             : [];
         const trabalhoTipo = tipoTrabalhoId
-            ? await prisma.tipoTrabalho.findUnique({
+            ? await prisma_1.prisma.tipoTrabalho.findUnique({
                 where: { id: tipoTrabalhoId },
                 select: { nome: true },
             })
             : null;
-        const autor = await prisma.usuario.findUnique({
+        const autor = await prisma_1.prisma.usuario.findUnique({
             where: { id: autorId },
             select: { nome: true },
         });
@@ -79,7 +78,7 @@ router.post("/", authMiddleware_1.authMiddleware, async (req, res) => {
         const embeddingRaw = await (0, embedding_service_1.generateEmbedding)(textoEmbedding);
         const embedding = Array.from(embeddingRaw);
         // Criar trabalho
-        const novo = await prisma.trabalho.create({
+        const novo = await prisma_1.prisma.trabalho.create({
             data: {
                 titulo,
                 resumo,
@@ -112,8 +111,12 @@ router.post("/", authMiddleware_1.authMiddleware, async (req, res) => {
         });
         // invalidar TODOS os caches relacionados
         const keys = await redis_1.redis.keys("trabalhos:list:*");
-        if (keys.length) {
-            await redis_1.redis.del(keys);
+        const keysToDelete = [
+            ...keys,
+            "dashboard:cards",
+        ];
+        if (keysToDelete.length) {
+            await redis_1.redis.del(keysToDelete);
         }
         return res.status(201).json({
             sucesso: true,
@@ -132,48 +135,28 @@ router.post("/", authMiddleware_1.authMiddleware, async (req, res) => {
 // LIST - Listar Trabalhos
 // ============================
 router.get("/", async (req, res) => {
-    const { departamentoId, autorNome, especialidadeId, status, start_date, end_date, page, per_page, tipoTrabalhoId, tag, // palavra-chave para busca no título ou resumo,
-     } = req.query;
-    const pageNumber = Number(page) || 1;
-    const limitNumber = Number(per_page) || 20;
-    const startDate = start_date
-        ? new Date(String(start_date))
-        : undefined;
-    const endDate = end_date
-        ? new Date(String(end_date))
-        : undefined;
-    if (endDate) {
-        endDate.setHours(23, 59, 59, 999);
-    }
+    const { departamentoId, autorNome, especialidadeId, status, start_date, end_date, page, per_page, tipoTrabalhoId, tag } = req.query;
+    const pageNumber = Math.max(Number(page) || 1, 1);
+    const limitNumber = Math.max(Number(per_page) || 20, 1);
     const skip = (pageNumber - 1) * limitNumber;
-    const cacheKey = `trabalhos:list:` +
-        `dep=${departamentoId ?? "all"}:` +
-        `autor=${autorNome ?? "all"}:` +
-        `esp=${especialidadeId ?? "all"}:` +
-        `status=${status ?? "all"}:` +
-        `start=${start_date ?? "none"}:` +
-        `tipo=${tipoTrabalhoId ?? "all"}:` +
-        `end=${end_date ?? "none"}:` +
-        `page=${pageNumber}:` +
-        `per_page=${limitNumber}`;
-    let cachedData = null;
+    const startDate = start_date ? new Date(String(start_date)) : undefined;
+    const endDate = end_date ? new Date(String(end_date)) : undefined;
+    if (endDate)
+        endDate.setHours(23, 59, 59, 999);
+    const cacheKey = `trabalhos:list:dep=${departamentoId ?? "all"}:autor=${autorNome ?? "all"}:esp=${especialidadeId ?? "all"}:status=${status ?? "all"}:start=${start_date ?? "none"}:end=${end_date ?? "none"}:tipo=${tipoTrabalhoId ?? "all"}:tag=${tag ?? "none"}:page=${pageNumber}:per_page=${limitNumber}`;
     try {
-        cachedData = await redis_1.redis.get(cacheKey);
-        if (cachedData) {
-            return res.json(JSON.parse(cachedData));
+        let cachedData = null;
+        try {
+            cachedData = await redis_1.redis.get(cacheKey);
+            if (cachedData)
+                return res.json(JSON.parse(cachedData));
         }
-    }
-    catch (err) {
-        console.warn("Redis indisponível, seguindo sem cache");
-    }
-    try {
+        catch (err) {
+            console.warn("Redis indisponível, seguindo sem cache");
+        }
         const where = {
-            tipoTrabalhoId: tipoTrabalhoId
-                ? Number(tipoTrabalhoId)
-                : undefined,
-            departamentoId: departamentoId
-                ? Number(departamentoId)
-                : undefined,
+            tipoTrabalhoId: tipoTrabalhoId ? Number(tipoTrabalhoId) : undefined,
+            departamentoId: departamentoId ? Number(departamentoId) : undefined,
             autor: autorNome
                 ? {
                     nome: {
@@ -189,80 +172,100 @@ router.get("/", async (req, res) => {
                     },
                 }
                 : undefined,
-            status: status
-                ? status
-                : undefined,
-            createdAt: startDate || endDate
+            status: status ? status : undefined,
+            createdAt: startDate || endDate ? { gte: startDate, lte: endDate } : undefined,
+            ...(tag
                 ? {
-                    gte: startDate,
-                    lte: endDate,
+                    OR: [
+                        {
+                            titulo: {
+                                contains: String(tag),
+                                mode: "insensitive",
+                            },
+                        },
+                        {
+                            resumo: {
+                                contains: String(tag),
+                                mode: "insensitive",
+                            },
+                        },
+                    ],
                 }
-                : undefined,
+                : {}),
         };
-        const trabalhos = await prisma.trabalho.findMany({
-            where,
-            skip,
-            take: limitNumber,
-            select: {
-                id: true,
-                titulo: true,
-                resumo: true,
-                fileUrl: true,
-                status: true,
-                dataPublicacao: true,
-                createdAt: true,
-                atualizadoEm: true,
-                autor: {
-                    select: {
-                        id: true,
-                        nome: true,
+        const [trabalhos, total] = await Promise.all([
+            prisma_1.prisma.trabalho.findMany({
+                where,
+                skip,
+                take: limitNumber,
+                select: {
+                    id: true,
+                    titulo: true,
+                    resumo: true,
+                    fileUrl: true,
+                    status: true,
+                    dataPublicacao: true,
+                    createdAt: true,
+                    atualizadoEm: true,
+                    autor: {
+                        select: {
+                            id: true,
+                            nome: true,
+                        },
+                    },
+                    departamento: {
+                        select: {
+                            id: true,
+                            nome: true,
+                        },
+                    },
+                    especialidades: {
+                        select: {
+                            id: true,
+                            nome: true,
+                        },
+                    },
+                    motivoRejeicao: true,
+                    tipoTrabalho: {
+                        select: {
+                            id: true,
+                            nome: true,
+                        },
                     },
                 },
-                departamento: {
-                    select: {
-                        id: true,
-                        nome: true,
-                    },
+                orderBy: {
+                    createdAt: "desc",
                 },
-                especialidades: {
-                    select: {
-                        id: true,
-                        nome: true,
-                    }
-                },
-                motivoRejeicao: true,
-                tipoTrabalho: {
-                    select: {
-                        id: true,
-                        nome: true,
-                    }
-                },
-            },
-            orderBy: {
-                createdAt: "desc",
-            },
-        });
-        const total = await prisma.trabalho.count({
-            where
-        });
+            }),
+            prisma_1.prisma.trabalho.count({ where }),
+        ]);
+        const totalPaginas = Math.ceil(total / limitNumber);
         const responsePayload = {
             sucesso: true,
             paginacao: {
                 totalItems: total,
-                totalPaginas: Math.ceil(total / limitNumber),
+                totalPaginas,
                 paginaAtual: pageNumber,
                 itensPorPagina: limitNumber,
                 totalItemsNaPagina: trabalhos.length,
             },
             dados: trabalhos,
         };
-        await redis_1.redis.set(cacheKey, JSON.stringify(responsePayload), {
-            EX: 60,
-        }); // cache por 60 segundos no redis
+        try {
+            await redis_1.redis.set(cacheKey, JSON.stringify(responsePayload), {
+                EX: 60,
+            });
+        }
+        catch (err) {
+            console.warn("Não foi possível guardar a lista de trabalhos no Redis");
+        }
         return res.json(responsePayload);
     }
     catch (e) {
-        res.status(500).json({ sucesso: false, erro: e.message });
+        return res.status(500).json({
+            sucesso: false,
+            erro: e.message,
+        });
     }
 });
 // ============================
@@ -313,7 +316,7 @@ router.get("/me", authMiddleware_1.authMiddleware, async (req, res) => {
                 : undefined,
         };
         const [trabalhos, total] = await Promise.all([
-            prisma.trabalho.findMany({
+            prisma_1.prisma.trabalho.findMany({
                 where,
                 skip,
                 take: limitNumber,
@@ -334,7 +337,7 @@ router.get("/me", authMiddleware_1.authMiddleware, async (req, res) => {
                 },
                 orderBy: { createdAt: "desc" },
             }),
-            prisma.trabalho.count({ where }),
+            prisma_1.prisma.trabalho.count({ where }),
         ]);
         const responsePayload = {
             sucesso: true,
@@ -360,7 +363,7 @@ router.get("/me", authMiddleware_1.authMiddleware, async (req, res) => {
 router.get("/:id", async (req, res) => {
     try {
         const id = Number(req.params.id);
-        const item = await prisma.trabalho.findUnique({
+        const item = await prisma_1.prisma.trabalho.findUnique({
             where: { id },
             include: {
                 autor: true,
@@ -383,7 +386,7 @@ router.put("/:id", authMiddleware_1.authMiddleware, async (req, res) => {
     try {
         const id = Number(req.params.id);
         const usuarioId = req.usuario.id;
-        const trabalho = await prisma.trabalho.findUnique({ where: { id } });
+        const trabalho = await prisma_1.prisma.trabalho.findUnique({ where: { id } });
         if (!trabalho)
             return res.status(404).json({ erro: "Trabalho não encontrado" });
         // Apenas autor ou admin pode editar
@@ -391,7 +394,7 @@ router.put("/:id", authMiddleware_1.authMiddleware, async (req, res) => {
             return res.status(403).json({ erro: "Sem permissão para editar" });
         }
         const { titulo, resumo, fileUrl, departamentoId, especialidadesIds, tipoTrabalhoId } = req.body;
-        const atualizado = await prisma.trabalho.update({
+        const atualizado = await prisma_1.prisma.trabalho.update({
             where: { id },
             data: {
                 titulo,
@@ -413,8 +416,12 @@ router.put("/:id", authMiddleware_1.authMiddleware, async (req, res) => {
         });
         // invalidar TODOS os caches relacionados
         const keys = await redis_1.redis.keys("trabalhos:list:*");
-        if (keys.length) {
-            await redis_1.redis.del(keys);
+        const keysToDelete = [
+            ...keys,
+            "dashboard:cards",
+        ];
+        if (keysToDelete.length) {
+            await redis_1.redis.del(keysToDelete);
         }
         res.json({ sucesso: true, dados: atualizado });
     }
@@ -429,7 +436,7 @@ router.delete("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allo
 async (req, res) => {
     try {
         const id = Number(req.params.id);
-        await prisma.trabalho.delete({ where: { id } });
+        await prisma_1.prisma.trabalho.delete({ where: { id } });
         // invalidar TODOS os caches relacionados
         const keys = await redis_1.redis.keys("trabalhos:list:*");
         if (keys.length) {
@@ -445,14 +452,18 @@ async (req, res) => {
 router.patch("/:id/publicar", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(role_1.Role.ADMIN, role_1.Role.AVALIADOR), async (req, res) => {
     try {
         const id = Number(req.params.id);
-        const trabalho = await prisma.trabalho.update({
+        const trabalho = await prisma_1.prisma.trabalho.update({
             where: { id },
-            data: { status: client_2.TrabalhoStatus.APROVADO },
+            data: { status: client_1.TrabalhoStatus.APROVADO },
         });
         // invalidar TODOS os caches relacionados
         const keys = await redis_1.redis.keys("trabalhos:list:*");
-        if (keys.length) {
-            await redis_1.redis.del(keys);
+        const keysToDelete = [
+            ...keys,
+            "dashboard:cards",
+        ];
+        if (keysToDelete.length) {
+            await redis_1.redis.del(keysToDelete);
         }
         res.json({ sucesso: true, dados: trabalho });
     }
@@ -465,14 +476,18 @@ router.patch("/:id/recusar", authMiddleware_1.authMiddleware, (0, roleMiddleware
     try {
         const id = Number(req.params.id);
         const { motivo } = req.body;
-        const trabalho = await prisma.trabalho.update({
+        const trabalho = await prisma_1.prisma.trabalho.update({
             where: { id },
-            data: { status: client_2.TrabalhoStatus.RECUSADO, motivoRejeicao: motivo ?? null },
+            data: { status: client_1.TrabalhoStatus.RECUSADO, motivoRejeicao: motivo ?? null },
         });
         //  invalidar TODOS os caches relacionados
         const keys = await redis_1.redis.keys("trabalhos:list:*");
-        if (keys.length) {
-            await redis_1.redis.del(keys);
+        const keysToDelete = [
+            ...keys,
+            "dashboard:cards",
+        ];
+        if (keysToDelete.length) {
+            await redis_1.redis.del(keysToDelete);
         }
         res.json({ sucesso: true, dados: trabalho });
     }
@@ -484,9 +499,9 @@ router.patch("/:id/recusar", authMiddleware_1.authMiddleware, (0, roleMiddleware
 router.patch("/:id/revisar", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(role_1.Role.ADMIN, role_1.Role.AVALIADOR), async (req, res) => {
     try {
         const id = Number(req.params.id);
-        const trabalho = await prisma.trabalho.update({
+        const trabalho = await prisma_1.prisma.trabalho.update({
             where: { id },
-            data: { status: client_2.TrabalhoStatus.EM_REVISAO },
+            data: { status: client_1.TrabalhoStatus.EM_REVISAO },
         });
         res.json({ sucesso: true, dados: trabalho });
     }
@@ -498,9 +513,9 @@ router.patch("/:id/revisar", authMiddleware_1.authMiddleware, (0, roleMiddleware
 router.patch("/:id/pendente", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(role_1.Role.ADMIN, role_1.Role.AVALIADOR), async (req, res) => {
     try {
         const id = Number(req.params.id);
-        const trabalho = await prisma.trabalho.update({
+        const trabalho = await prisma_1.prisma.trabalho.update({
             where: { id },
-            data: { status: client_2.TrabalhoStatus.PENDENTE },
+            data: { status: client_1.TrabalhoStatus.PENDENTE },
         });
         res.json({ sucesso: true, dados: trabalho });
     }

@@ -1,11 +1,10 @@
 // src/routes/departamentoRoutes.ts
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
-import { Role } from "../types/role";
+   import { Role } from "../types/role";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { allowRoles } from "../middleware/roleMiddleware";
+import { prisma } from "../config/prisma";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // ============================

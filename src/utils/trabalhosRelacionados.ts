@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../config/prisma";
 
 
  const calcularSimilaridadeCoseno = (
@@ -58,7 +58,6 @@ import { PrismaClient } from "@prisma/client";
     );
   };
 
-const prisma = new PrismaClient();
 
 
 // ============================================================

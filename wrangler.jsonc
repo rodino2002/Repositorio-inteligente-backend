@@ -1,13 +1,22 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-
-  "name": "repositorio-backend",
-
-  "main": "src/worker.ts",
-
-  "compatibility_date": "2026-09-20",
-
-  "compatibility_flags": [
-    "nodejs_compat"
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "repositorio-backend",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-09-20",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"nodejs_compat_populate_process_env"
+	],
+	"r2_buckets": [
+		{
+			"binding": "R2_BUCKET",
+			"bucket_name": "my-files"
+		}
+	],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "38770dbb117745dd94fcabde494c8f9b"
+		}
+	]
 }

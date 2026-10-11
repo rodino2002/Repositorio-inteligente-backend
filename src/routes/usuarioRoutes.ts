@@ -1,14 +1,14 @@
 // src/routes/usuarioRoutes.ts
 import { Router, Request, Response } from "express";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { allowRoles } from "../middleware/roleMiddleware";
 import { authMiddleware } from "../middleware/authMiddleware";
 import { Role } from "@prisma/client";
 import { validarBI } from "../services/biValidation.service";
 import { redis } from "../lib/redis";
+import { prisma } from "../config/prisma";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 

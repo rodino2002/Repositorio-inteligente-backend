@@ -14,7 +14,7 @@ import buscaInteligente from "./routes/buscaInteligente";
 import { errorHandler } from "./middleware/globalMiddleware";
 // import { swaggerSpec } from "./docs/swagger";
 import dashboardRouter from "./routes/dashboard";
-
+import testDbRoutes from "./routes/testROute";
 const apiV1 = "/api/v1";
 
 const app: Application = express();
@@ -34,7 +34,7 @@ app.use(express.json());
 
 // Routes
 // app.use("/uploads", express.static("uploads"));
-
+app.use(`${apiV1}/test-prisma`, testDbRoutes);
 app.use(`${apiV1}/upload`, uploadRouter);
 app.use(`${apiV1}/trabalhos`, trabalhosRoutes);
 app.use(`${apiV1}/departamentos`, departamentoRoutes);
@@ -47,6 +47,7 @@ app.post(`${apiV1}/send-otp`, SendOTP);
 app.post(`${apiV1}/refresh`, RefreshToken);
 
 app.use(`${apiV1}/semantic`, buscaInteligente);
+
 
 app.use(errorHandler);
 

@@ -1,5 +1,4 @@
 import { Router, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { validarBI } from "../services/biValidation.service";
 import {
@@ -7,8 +6,8 @@ import {
   gerarRefreshToken
 } from "../utils/jwt";
 import { Role } from "../types/role";
+import { prisma } from "../config/prisma";
 
-const prisma = new PrismaClient();
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_KEY || "keysecret";

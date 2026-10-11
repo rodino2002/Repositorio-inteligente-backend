@@ -2,11 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/especialidadeRoutes.ts
 const express_1 = require("express");
-const client_1 = require("@prisma/client");
 const role_1 = require("../types/role");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const roleMiddleware_1 = require("../middleware/roleMiddleware");
-const prisma = new client_1.PrismaClient();
+const prisma_1 = require("../config/prisma");
 const router = (0, express_1.Router)();
 // ============================
 // CREATE - Criar Especialidade
@@ -14,7 +13,7 @@ const router = (0, express_1.Router)();
 router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(role_1.Role.ADMIN), async (req, res) => {
     const { nome, descricao, departamentoId } = req.body;
     try {
-        const nova = await prisma.especialidade.create({
+        const nova = await prisma_1.prisma.especialidade.create({
             data: {
                 nome,
                 descricao,
@@ -36,7 +35,7 @@ router.post("/", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRole
 // ============================
 router.get("/", async (_req, res) => {
     try {
-        const dados = await prisma.especialidade.findMany({
+        const dados = await prisma_1.prisma.especialidade.findMany({
             orderBy: { createdAt: "desc" },
             include: {
                 departamento: true,
@@ -59,7 +58,7 @@ router.get("/", async (_req, res) => {
 router.get("/:id", async (req, res) => {
     const { id } = req.params;
     try {
-        const item = await prisma.especialidade.findUnique({
+        const item = await prisma_1.prisma.especialidade.findUnique({
             where: { id: parseInt(id) },
             include: {
                 departamento: true,
@@ -88,7 +87,7 @@ router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRo
     const { id } = req.params;
     const { nome, descricao, departamentoId } = req.body;
     try {
-        const atualizado = await prisma.especialidade.update({
+        const atualizado = await prisma_1.prisma.especialidade.update({
             where: { id: parseInt(id) },
             data: {
                 nome,
@@ -112,7 +111,7 @@ router.put("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRo
 router.delete("/:id", authMiddleware_1.authMiddleware, (0, roleMiddleware_1.allowRoles)(role_1.Role.ADMIN), async (req, res) => {
     const { id } = req.params;
     try {
-        await prisma.especialidade.delete({
+        await prisma_1.prisma.especialidade.delete({
             where: { id: parseInt(id) },
         });
         res.json({ sucesso: true, mensagem: "Especialidade removida com sucesso." });

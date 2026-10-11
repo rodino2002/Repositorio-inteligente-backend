@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const client_1 = require("@prisma/client");
 const express_1 = require("express");
 const redis_1 = require("../lib/redis");
 const crypto_1 = __importDefault(require("crypto"));
@@ -11,7 +10,7 @@ const normalizaTexto_1 = require("../utils/normalizaTexto");
 const embedding_service_1 = require("../services/embedding.service");
 const escapeSqlString_1 = require("../utils/escapeSqlString");
 const trabalhosRelacionados_1 = require("../utils/trabalhosRelacionados");
-const prisma = new client_1.PrismaClient();
+const prisma_1 = require("../config/prisma");
 const router = (0, express_1.Router)();
 router.post("/buscar-inteligente", async (req, res) => {
     const { query, threshold = 0.4 } = req.body;
@@ -76,7 +75,7 @@ router.post("/buscar-inteligente", async (req, res) => {
         // Assim um trabalho pode entrar pela busca lexical mesmo
         // que não esteja entre os TOP 20 semanticamente.
         //
-        const resultadosRaw = await prisma.$queryRawUnsafe(`
+        const resultadosRaw = await prisma_1.prisma.$queryRawUnsafe(`
 
     WITH base AS (
 
@@ -291,7 +290,7 @@ router.post("/buscar-inteligente", async (req, res) => {
         const ids = resultadosRaw.map((item) => Number(item.id));
         let trabalhosRelacionados = [];
         if (ids.length > 0) {
-            trabalhosRelacionados = await prisma.trabalho.findMany({
+            trabalhosRelacionados = await prisma_1.prisma.trabalho.findMany({
                 where: {
                     id: {
                         in: ids,
