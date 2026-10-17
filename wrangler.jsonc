@@ -18,5 +18,9 @@
 			"binding": "HYPERDRIVE",
 			"id": "38770dbb117745dd94fcabde494c8f9b"
 		}
-	]
+	],
+	"vars": {
+		"EMBEDDINGS_SERVICE_URL": "https://yesterday-luck-retention-lung.trycloudflare.com",
+		"CLOUDFLARE_WORKER_RUNTIME": "true"
+	}
 }

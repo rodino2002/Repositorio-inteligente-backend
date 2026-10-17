@@ -484,19 +484,37 @@ router.put(
       });
 
 
-      // invalidar TODOS os caches relacionados
-      const keys = await redis.keys("trabalhos:list:*");
+      // Invalidar caches sem impedir a edição quando o Redis
+      // estiver indisponível.
+      try {
+        if (redis.isOpen) {
+          const keys = await redis.keys("trabalhos:list:*");
 
-      const keysToDelete = [
-        ...keys,
-        "dashboard:cards",
-      ];
+          const keysToDelete = [
+            ...keys,
+            "dashboard:cards",
+          ];
 
-      if (keysToDelete.length) {
-        await redis.del(keysToDelete);
+          if (keysToDelete.length > 0) {
+            await redis.del(keysToDelete);
+          }
+        } else {
+          console.warn(
+            "Redis indisponível: edição concluída sem invalidar o cache."
+          );
+        }
+      } catch (cacheError) {
+        console.error(
+          "Erro ao invalidar cache após editar trabalho:",
+          cacheError
+        );
       }
 
-      res.json({ sucesso: true, dados: atualizado });
+      return res.json({
+        sucesso: true,
+        dados: atualizado,
+      });
+
     } catch (e: any) {
       res.status(500).json({ sucesso: false, erro: e.message });
     }

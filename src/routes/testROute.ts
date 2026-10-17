@@ -1,3 +1,4 @@
+
 import { Router } from "express";
 import { prisma } from "../config/prisma";
 
@@ -7,10 +8,7 @@ router.get("/", async (_req, res) => {
   try {
     const total = await prisma.departamento.count();
 
-    return res.json({
-      sucesso: true,
-      total,
-    });
+    return res.json({ sucesso: true, total });
   } catch (error: any) {
     console.error("TEST PRISMA ERROR:", error);
 
